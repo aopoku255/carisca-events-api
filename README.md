@@ -21,7 +21,9 @@ Node · Express · Sequelize · MySQL · Redis. JavaScript (ESM).
 | Audit log with database-enforced immutability | ✅ |
 | Notification outbox | ✅ (dispatcher worker is Week 1) |
 | Money as integer minor units | ✅ |
-| Test suite | ✅ 80 tests |
+| Participant demographics + M&E vocabularies | ✅ |
+| Conditional price resolution | ✅ |
+| Test suite | ✅ 103 tests |
 | CPD module | ⬜ Week 1 |
 | Payments — Paystack / Stripe | ⬜ Week 2 |
 | Attendance, certificates | ⬜ Week 3 |
@@ -131,6 +133,49 @@ everyone.
 from the `currencies` table — nothing assumes two places, so JPY (0) and KWD
 (3) work. `src/lib/money.js` parses via string and `BigInt`; no float ever
 touches an amount.
+
+### What we collect, and where it lives
+
+Modelled from the live form at `cpd.carisca.org`.
+
+**On the user** — collected once, prefilled on every later programme: prefix,
+first/middle/last name, suffix, gender, phone, organization, position, sector,
+city, state/province, country, mailing-list preference.
+
+**On the registration** — specific to attending this event: attendance mode
+(in-person / virtual), whether a certificate is wanted, previous CARISCA
+attendance, comments, media-consent timestamp and IP, and any supporting
+evidence file such as a student ID.
+
+**Position** (16 values) and **Sector** (6) are reference tables copied
+verbatim from the live form so M&E can compare cohorts across years. Adding a
+category is a row, not a migration. `positions.requires_student_id` drives the
+conditional ID upload, so that rule is data rather than a hard-coded check for
+the word "student".
+
+**Continent is derived from the country**, not asked separately. The live form
+asks for both, which permits "Ghana, Europe".
+
+### Pricing
+
+One event can be priced several ways at once. CARISCA's current CPD is the
+worked example:
+
+| | Virtual | In-Person |
+|---|---|---|
+| Africa | $25 | $50 |
+| Outside Africa | $25 | $150 |
+| Ghana (GHS) | 1000 | 1500 |
+
+Each `event_prices` row carries the conditions under which it applies —
+`attendance_mode`, `audience` (`HOST_COUNTRY` / `AFRICA` / `INTERNATIONAL` /
+`ANY`), currency and an availability window. `resolvePrice()` picks the most
+specific match; ties break on `priority`, then on the **lower** amount, so an
+ambiguous configuration never overcharges a participant. Nothing matching is
+an error rather than a free ticket.
+
+Adding a student or early-bird rate is a row. See
+`tests/integration/pricing.test.js`, which uses the real published fees.
 
 ### Audit log
 

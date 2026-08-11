@@ -29,6 +29,20 @@ export default function defineIdentity(sequelize) {
     password_hash: { type: DataTypes.STRING(255), allowNull: false },
     first_name: { type: DataTypes.STRING(80), allowNull: false },
     last_name: { type: DataTypes.STRING(80), allowNull: false },
+    // Demographics modelled on what CARISCA collects today. They live on the
+    // user rather than the registration so a returning participant does not
+    // retype them for every programme.
+    prefix: { type: DataTypes.STRING(16) },
+    middle_name: { type: DataTypes.STRING(80) },
+    suffix: { type: DataTypes.STRING(16) },
+    gender: { type: DataTypes.STRING(32) },
+    position_id: { type: DataTypes.BIGINT.UNSIGNED },
+    sector_id: { type: DataTypes.BIGINT.UNSIGNED },
+    city: { type: DataTypes.STRING(120) },
+    state_province: { type: DataTypes.STRING(120) },
+    email_opt_out: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    email_preference_set_at: { type: DataTypes.DATE(3) },
+
     phone: { type: DataTypes.STRING(32) },
     country_code: { type: DataTypes.CHAR(2) },
     organization: { type: DataTypes.STRING(160) },

@@ -6,6 +6,7 @@ import { logger } from '../../lib/logger.js';
 import defineReference from './reference.js';
 import defineIdentity from './identity.js';
 import defineSystem from './system.js';
+import defineEvent from './event.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -21,12 +22,14 @@ const registry = {};
 Object.assign(registry, defineReference(sequelize));
 Object.assign(registry, defineIdentity(sequelize));
 Object.assign(registry, defineSystem(sequelize));
+Object.assign(registry, defineEvent(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
-  Country, Currency,
+  Country, Currency, Position, Sector,
   Department, User, Role, Permission, RefreshToken, UserToken, UserRole, RolePermission,
   AuditLog, File, SystemSetting,
+  EventType, Event, EventPrice, CpdEventDetail,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -55,6 +58,19 @@ RefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 User.hasMany(UserToken, { foreignKey: 'user_id', as: 'tokens' });
 UserToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+User.belongsTo(Position, { foreignKey: 'position_id', as: 'position' });
+User.belongsTo(Sector, { foreignKey: 'sector_id', as: 'sector' });
+
+EventType.hasMany(Event, { foreignKey: 'event_type_id', as: 'events' });
+Event.belongsTo(EventType, { foreignKey: 'event_type_id', as: 'type' });
+Event.belongsTo(Country, { foreignKey: 'country_code', as: 'country' });
+Event.belongsTo(Department, { foreignKey: 'organizer_department_id', as: 'organizer' });
+Event.hasMany(EventPrice, { foreignKey: 'event_id', as: 'prices' });
+EventPrice.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+EventPrice.belongsTo(Currency, { foreignKey: 'currency', as: 'currencyRef' });
+Event.hasOne(CpdEventDetail, { foreignKey: 'event_id', as: 'cpd' });
+CpdEventDetail.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
