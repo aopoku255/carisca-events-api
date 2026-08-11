@@ -7,6 +7,7 @@ import defineReference from './reference.js';
 import defineIdentity from './identity.js';
 import defineSystem from './system.js';
 import defineEvent from './event.js';
+import defineRegistration from './registration.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -23,6 +24,7 @@ Object.assign(registry, defineReference(sequelize));
 Object.assign(registry, defineIdentity(sequelize));
 Object.assign(registry, defineSystem(sequelize));
 Object.assign(registry, defineEvent(sequelize));
+Object.assign(registry, defineRegistration(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
@@ -30,6 +32,8 @@ const {
   Department, User, Role, Permission, RefreshToken, UserToken, UserRole, RolePermission,
   AuditLog, File, SystemSetting,
   EventType, Event, EventPrice, CpdEventDetail,
+  EventSession, EventSpeaker, RegistrationQuestion,
+  Registration, RegistrationAnswer, RegistrationStatusHistory,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -71,6 +75,34 @@ EventPrice.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 EventPrice.belongsTo(Currency, { foreignKey: 'currency', as: 'currencyRef' });
 Event.hasOne(CpdEventDetail, { foreignKey: 'event_id', as: 'cpd' });
 CpdEventDetail.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+
+Event.hasMany(EventSession, { foreignKey: 'event_id', as: 'sessions' });
+EventSession.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+Event.hasMany(EventSpeaker, { foreignKey: 'event_id', as: 'speakers' });
+EventSpeaker.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+
+Event.hasMany(RegistrationQuestion, { foreignKey: 'event_id', as: 'questions' });
+RegistrationQuestion.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+
+/**
+ * Registrations point at `events`, never at a module's own table. This is the
+ * association that lets Summit and Business Forum reuse the entire
+ * registration, payment, attendance and certificate stack unchanged.
+ */
+Event.hasMany(Registration, { foreignKey: 'event_id', as: 'registrations' });
+Registration.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+User.hasMany(Registration, { foreignKey: 'user_id', as: 'registrations' });
+Registration.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Registration.belongsTo(File, { foreignKey: 'evidence_file_id', as: 'evidence' });
+
+Registration.hasMany(RegistrationAnswer, { foreignKey: 'registration_id', as: 'answers' });
+RegistrationAnswer.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
+RegistrationAnswer.belongsTo(RegistrationQuestion, { foreignKey: 'question_id', as: 'question' });
+RegistrationQuestion.hasMany(RegistrationAnswer, { foreignKey: 'question_id', as: 'answers' });
+
+Registration.hasMany(RegistrationStatusHistory, { foreignKey: 'registration_id', as: 'history' });
+RegistrationStatusHistory.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
+RegistrationStatusHistory.belongsTo(User, { foreignKey: 'changed_by', as: 'changedBy' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
