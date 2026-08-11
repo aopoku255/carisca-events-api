@@ -1,0 +1,21 @@
+import { Router } from 'express';
+import authRoutes from './core/auth/auth.routes.js';
+import adminRoutes from './core/admin/admin.routes.js';
+import cpdRoutes from './modules/cpd/cpd.routes.js';
+import summitRoutes from './modules/summit/summit.routes.js';
+import businessForumRoutes from './modules/business-forum/business-forum.routes.js';
+
+/**
+ * The one place modules are wired into the API. A new module is a directory
+ * plus a line here — nothing in core needs to change.
+ */
+const router = Router();
+
+router.use('/auth', authRoutes);
+router.use('/admin', adminRoutes);
+
+router.use('/cpd', cpdRoutes);
+router.use('/summit', summitRoutes);
+router.use('/business-forum', businessForumRoutes);
+
+export default router;
