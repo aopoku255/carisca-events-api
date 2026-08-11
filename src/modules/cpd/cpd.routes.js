@@ -252,6 +252,12 @@ router.put('/events/:id/prices',
     try {
       const eventId = req.params.id;
 
+      // Refuse to withdraw a currency people are currently registered at.
+      await eventService.assertCurrenciesStillCovered(
+        eventId,
+        req.body.prices.map((p) => p.currency),
+      );
+
       await sequelize.transaction(async (transaction) => {
         await EventPrice.destroy({ where: { event_id: eventId }, transaction });
         await EventPrice.bulkCreate(

@@ -100,20 +100,6 @@ export async function update(id, input, { actor, context = {} }) {
 
   const before = event.toJSON();
 
-  // Changing the currency after money has moved would misstate what people
-  // owed. Refused outright rather than silently ignored.
-  if (input.currency && input.currency !== before.currency) {
-    const paidCount = await Registration.count({
-      where: { event_id: id, status: { [Op.in]: ['CONFIRMED', 'REFUNDED'] } },
-    });
-    if (paidCount > 0) {
-      throw new AppError(
-        'The currency cannot be changed once registrations have been paid for.',
-        { status: 409, code: 'CURRENCY_LOCKED', details: { paidRegistrations: paidCount } },
-      );
-    }
-  }
-
   await sequelize.transaction(async (transaction) => {
     await event.update(input, { transaction });
 
@@ -236,6 +222,47 @@ export async function occupancy(eventId, { attendanceMode = null, transaction = 
   return Registration.count({ where, transaction });
 }
 
+/**
+ * Currency lives on the price rows, so this is where it has to be protected.
+ *
+ * An existing registration has its amount and currency frozen on its own row,
+ * so it can never be restated. But withdrawing a currency that people are
+ * currently mid-payment in leaves them holding a quote nothing can settle,
+ * so replacing the price list may not drop a currency still in use.
+ */
+export async function assertCurrenciesStillCovered(eventId, incomingCurrencies, { transaction = null } = {}) {
+  const live = await Registration.findAll({
+    attributes: [
+      [sequelize.fn('DISTINCT', sequelize.col('currency')), 'currency'],
+    ],
+    where: {
+      event_id: eventId,
+      currency: { [Op.ne]: null },
+      status: { [Op.in]: ['PENDING_PAYMENT', 'CONFIRMED', 'REQUIRES_REVIEW'] },
+    },
+    raw: true,
+    transaction,
+  });
+
+  const offered = new Set(incomingCurrencies.map((c) => String(c).toUpperCase()));
+  const orphaned = live
+    .map((r) => r.currency)
+    .filter((c) => c && !offered.has(String(c).toUpperCase()));
+
+  if (orphaned.length) {
+    throw new AppError(
+      `Cannot remove ${orphaned.join(', ')} — people are registered at that price.`,
+      {
+        status: 409,
+        code: 'CURRENCY_IN_USE',
+        details: { inUse: [...new Set(orphaned)], offered: [...offered] },
+      },
+    );
+  }
+
+  return true;
+}
+
 export async function capacityStatus(event, attendanceMode) {
   const capacity = event.capacityFor(attendanceMode);
   if (capacity === null || capacity === undefined) {
@@ -247,5 +274,6 @@ export async function capacityStatus(event, attendanceMode) {
 
 export default {
   findById, findPublicBySlug, create, update, transition,
-  occupancy, capacityStatus, notifyRegistrants, DETAIL_INCLUDE,
+  occupancy, capacityStatus, notifyRegistrants,
+  assertCurrenciesStillCovered, DETAIL_INCLUDE,
 };
