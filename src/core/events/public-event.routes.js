@@ -48,6 +48,8 @@ router.get('/events',
           { model: EventType, as: 'type', ...(type ? { where: { key: type } } : {}) },
           { model: models.EventPrice, as: 'prices' },
           { model: Country, as: 'country' },
+          // Listings show the banner too; without this the card renders blank.
+          { model: models.File, as: 'banner' },
         ],
         order: [['start_at', when === 'past' ? 'DESC' : 'ASC']],
         ...offsetFor({ page, limit }),
