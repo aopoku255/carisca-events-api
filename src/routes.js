@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './core/auth/auth.routes.js';
 import adminRoutes from './core/admin/admin.routes.js';
+import userRoutes from './core/users/user.routes.js';
 import publicEventRoutes from './core/events/public-event.routes.js';
 import registrationRoutes from './core/registrations/registration.routes.js';
 import cpdRoutes from './modules/cpd/cpd.routes.js';
@@ -15,6 +16,9 @@ const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
+
+// Self-service profile. Only ever acts on the caller's own record.
+router.use('/users', userRoutes);
 
 // Public discovery — no authentication. Mounted at the root so event listings
 // live at /api/v1/events regardless of which module owns them.
