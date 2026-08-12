@@ -27,7 +27,10 @@ export function paginated(res, items, { page, limit, total }, message = 'OK') {
       limit,
       total,
       totalPages: limit > 0 ? Math.ceil(total / limit) : 0,
-      hasMore: page * limit < total,
+      // Both directions, because a pager needs to know whether to render a
+      // "previous" control and cannot infer that from hasMore alone.
+      hasNext: page * limit < total,
+      hasPrevious: page > 1,
     },
   });
 }

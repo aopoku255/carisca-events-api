@@ -99,6 +99,13 @@ export function serialisePublicEvent(event, { capacity = null } = {}) {
   return {
     ...base(event),
     onlineUrl: undefined, // only released to a confirmed registrant
+    // The certificate condition is published deliberately: telling someone a
+    // certificate is awarded without saying what earns it is a complaint
+    // waiting to happen.
+    attendance: {
+      rule: event.attendance_rule,
+      minPercent: event.min_attendance_percent ?? null,
+    },
     prices: prices(event),
     questions: questions(event),
     sessions: sessions(event),
