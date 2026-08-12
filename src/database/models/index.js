@@ -33,7 +33,7 @@ const {
   AuditLog, File, SystemSetting,
   EventType, Event, EventPrice, CpdEventDetail,
   EventSession, EventSpeaker, RegistrationQuestion,
-  Registration, RegistrationAnswer, RegistrationStatusHistory,
+  Registration, RegistrationAnswer, RegistrationStatusHistory, AttendanceRecord,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -103,6 +103,12 @@ RegistrationQuestion.hasMany(RegistrationAnswer, { foreignKey: 'question_id', as
 Registration.hasMany(RegistrationStatusHistory, { foreignKey: 'registration_id', as: 'history' });
 RegistrationStatusHistory.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
 RegistrationStatusHistory.belongsTo(User, { foreignKey: 'changed_by', as: 'changedBy' });
+
+Registration.hasMany(AttendanceRecord, { foreignKey: 'registration_id', as: 'attendance' });
+AttendanceRecord.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
+AttendanceRecord.belongsTo(EventSession, { foreignKey: 'session_id', as: 'session' });
+AttendanceRecord.belongsTo(User, { foreignKey: 'recorded_by', as: 'recordedBy' });
+EventSession.hasMany(AttendanceRecord, { foreignKey: 'session_id', as: 'attendance' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });

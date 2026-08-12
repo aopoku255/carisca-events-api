@@ -4,6 +4,7 @@ import adminRoutes from './core/admin/admin.routes.js';
 import userRoutes from './core/users/user.routes.js';
 import publicEventRoutes from './core/events/public-event.routes.js';
 import registrationRoutes from './core/registrations/registration.routes.js';
+import attendanceRoutes from './core/attendance/attendance.routes.js';
 import cpdRoutes from './modules/cpd/cpd.routes.js';
 import summitRoutes from './modules/summit/summit.routes.js';
 import businessForumRoutes from './modules/business-forum/business-forum.routes.js';
@@ -26,6 +27,9 @@ router.use('/', publicEventRoutes);
 
 // Registration is shared: every module registers people the same way.
 router.use('/registrations', registrationRoutes);
+
+// Attendance is shared: the scanner works for any event type.
+router.use('/attendance', attendanceRoutes);
 
 router.use('/cpd', cpdRoutes);
 router.use('/summit', summitRoutes);

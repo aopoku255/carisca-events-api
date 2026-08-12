@@ -381,17 +381,20 @@ describe('registration questions', () => {
 
 describe('public discovery', () => {
   test('drafts are invisible and published events are listed', async () => {
-    const hidden = await createDraft({ title: 'Unlisted internal planning day' });
-    const shown = await createDraft({ title: 'Public analytics masterclass' });
+    // Unique titles and a search filter, so this cannot be knocked over by
+    // whatever other suites happen to have created.
+    const tag = `Zeta${Date.now()}`;
+    const hidden = await createDraft({ title: `Unlisted planning day ${tag}` });
+    const shown = await createDraft({ title: `Public masterclass ${tag}` });
     await setPrices(shown.id, standard);
     await request(server).post(`/api/v1/cpd/events/${shown.id}/publish`).set(authHeader(director)).send({});
 
-    const res = await request(server).get('/api/v1/events?limit=50');
+    const res = await request(server).get(`/api/v1/events?limit=50&q=${tag}`);
     expect(res.status).toBe(200);
 
     const titles = res.body.data.map((e) => e.title);
-    expect(titles).toContain('Public analytics masterclass');
-    expect(titles).not.toContain('Unlisted internal planning day');
+    expect(titles).toContain(`Public masterclass ${tag}`);
+    expect(titles).not.toContain(`Unlisted planning day ${tag}`);
 
     expect((await request(server).get(`/api/v1/events/${hidden.slug}`)).status).toBe(404);
   });

@@ -136,8 +136,38 @@ export default function defineRegistration(sequelize) {
     underscored: true,
   });
 
+  const AttendanceRecord = sequelize.define('AttendanceRecord', {
+    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+    registration_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+    // NULL means the event as a whole rather than a particular session.
+    session_id: { type: DataTypes.BIGINT.UNSIGNED },
+    status: {
+      type: DataTypes.ENUM('REGISTERED', 'CHECKED_IN', 'ATTENDED', 'ABSENT'),
+      allowNull: false,
+      defaultValue: 'CHECKED_IN',
+    },
+    check_in_at: { type: DataTypes.DATE(3) },
+    check_out_at: { type: DataTypes.DATE(3) },
+    method: {
+      type: DataTypes.ENUM('QR', 'MANUAL', 'IMPORT', 'SELF'),
+      allowNull: false,
+      defaultValue: 'QR',
+    },
+    recorded_by: { type: DataTypes.BIGINT.UNSIGNED },
+    device_info: { type: DataTypes.STRING(255) },
+    notes: { type: DataTypes.STRING(500) },
+  }, {
+    tableName: 'attendance_records',
+    timestamps: true,
+    underscored: true,
+    // session_key is a generated column backing the unique constraint; the
+    // database maintains it and writing to it would error.
+    defaultScope: { attributes: { exclude: ['session_key'] } },
+  });
+
   return {
     EventSession, EventSpeaker, RegistrationQuestion,
     Registration, RegistrationAnswer, RegistrationStatusHistory,
+    AttendanceRecord,
   };
 }
