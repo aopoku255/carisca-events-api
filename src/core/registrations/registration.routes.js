@@ -13,6 +13,8 @@ import {
   authenticate, loadPermissions, requirePermission,
 } from '../../middleware/authenticate.js';
 import { AuthorizationError, NotFoundError } from '../../lib/errors.js';
+import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
+import { record as audit } from '../audit/audit.service.js';
 
 const { Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion } = models;
 
@@ -127,6 +129,104 @@ router.get('/mine',
         status: req.validatedQuery.status,
       });
       return ok(res, registrations.map((r) => serialiseRegistration(r)));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+// --- export ------------------------------------------------------------------
+/**
+ * The participant list as a spreadsheet.
+ *
+ * Its own permission (`.export`) rather than riding on `.view`: reading one
+ * registration on screen and walking out with every participant's contact
+ * details are different acts, and only the second needs an audit trail.
+ */
+router.get('/export',
+  authenticate,
+  loadPermissions,
+  requirePermission('cpd.registration.export'),
+  validate({
+    query: z.object({
+      eventId: z.coerce.number().int().positive(),
+      status: z.string().trim().max(64).optional(),
+      attendanceMode: z.enum(['IN_PERSON', 'VIRTUAL']).optional(),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const { eventId, status, attendanceMode } = req.validatedQuery;
+
+      const event = await eventService.findById(eventId, { includeDetail: false });
+
+      const where = { event_id: eventId };
+      if (status) where.status = { [Op.in]: status.split(',').map((s) => s.trim().toUpperCase()) };
+      if (attendanceMode) where.attendance_mode = attendanceMode;
+
+      const registrations = await Registration.findAll({
+        where,
+        include: [
+          { model: User, as: 'user', include: [{ model: models.Position, as: 'position' }, { model: models.Sector, as: 'sector' }, { model: Country, as: 'country' }] },
+          { model: RegistrationAnswer, as: 'answers', include: [{ model: RegistrationQuestion, as: 'question' }] },
+        ],
+        order: [['created_at', 'ASC']],
+      });
+
+      // The event's own questions become columns, so a bespoke form still
+      // exports as a flat sheet rather than a JSON blob in one cell.
+      const questions = await RegistrationQuestion.findAll({
+        where: { event_id: eventId },
+        order: [['sort_order', 'ASC']],
+      });
+
+      const answerFor = (registration, questionId) => registration.answers
+        ?.find((a) => String(a.question_id) === String(questionId))?.value ?? '';
+
+      const columns = [
+        { header: 'Reference', map: (r) => r.reference },
+        { header: 'Status', map: (r) => r.status },
+        { header: 'Attending', map: (r) => (r.attendance_mode === 'VIRTUAL' ? 'Online' : 'In person') },
+        { header: 'Title', map: (r) => r.user?.prefix ?? '' },
+        { header: 'First name', map: (r) => r.user?.first_name ?? '' },
+        { header: 'Last name', map: (r) => r.user?.last_name ?? '' },
+        { header: 'Email', map: (r) => r.user?.email ?? '' },
+        { header: 'Phone', map: (r) => r.user?.phone ?? '' },
+        { header: 'Gender', map: (r) => r.user?.gender ?? '' },
+        { header: 'Organization', map: (r) => r.user?.organization ?? '' },
+        { header: 'Position', map: (r) => r.user?.position?.label ?? '' },
+        { header: 'Sector', map: (r) => r.user?.sector?.label ?? '' },
+        { header: 'City', map: (r) => r.user?.city ?? '' },
+        { header: 'State/Province', map: (r) => r.user?.state_province ?? '' },
+        { header: 'Country', map: (r) => r.user?.country?.name ?? r.user?.country_code ?? '' },
+        { header: 'Region', map: (r) => r.user?.country?.region ?? '' },
+        { header: 'Fee', map: (r) => (r.currency ? `${r.currency} ${(Number(r.price_amount_minor) / 100).toFixed(2)}` : '') },
+        { header: 'Certificate wanted', map: (r) => (r.wants_certificate === null ? '' : r.wants_certificate ? 'Yes' : 'No') },
+        { header: 'Attended before', map: (r) => (r.is_previous_attendee === null ? '' : r.is_previous_attendee ? 'Yes' : 'No') },
+        { header: 'Consented to recording', map: (r) => (r.media_consent_at ? 'Yes' : 'No') },
+        { header: 'Accessibility/dietary', map: (r) => r.special_requirements ?? '' },
+        { header: 'Comments', map: (r) => r.comments ?? '' },
+        { header: 'Registered at', map: (r) => r.created_at?.toISOString() ?? '' },
+        { header: 'Confirmed at', map: (r) => r.confirmed_at?.toISOString() ?? '' },
+        ...questions.map((q) => ({
+          header: q.label,
+          map: (r) => answerFor(r, q.id),
+        })),
+      ];
+
+      const csv = toCsv(columns, registrations);
+
+      // Exporting participant data is exactly the kind of act the audit log
+      // exists for: who took a copy of what, and when.
+      await audit({
+        actor: { id: req.user.id, email: req.user.email },
+        action: 'registration.exported',
+        resourceType: 'event',
+        resourceId: eventId,
+        metadata: { rows: registrations.length, status: status ?? 'all', attendanceMode: attendanceMode ?? 'all' },
+        context: { ip: req.ip, userAgent: req.get('user-agent'), requestId: req.id },
+      });
+
+      return sendCsv(res, exportFilename(`${event.slug}-registrations`), csv);
     } catch (err) {
       return next(err);
     }

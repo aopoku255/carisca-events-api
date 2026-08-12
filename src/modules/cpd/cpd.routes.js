@@ -97,6 +97,83 @@ router.get('/events/:id',
     }
   });
 
+/**
+ * Everything the event's admin page needs in one call: headline counts plus
+ * the breakdowns M&E asks for. One round trip rather than six, and the
+ * grouping happens in MySQL rather than by loading every registration.
+ */
+router.get('/events/:id/summary',
+  requirePermission('cpd.registration.view'),
+  validate({ params: schema.idParam }),
+  loadCpdEvent,
+  async (req, res, next) => {
+    try {
+      const eventId = req.params.id;
+      const replacements = { eventId };
+
+      const group = (column, extraJoin = '', label = 'label') => sequelize.query(
+        `SELECT ${column} AS ${label}, COUNT(*) AS count
+           FROM registrations r ${extraJoin}
+          WHERE r.event_id = :eventId AND r.deleted_at IS NULL
+          GROUP BY ${column}
+          ORDER BY count DESC`,
+        { replacements, type: sequelize.QueryTypes.SELECT },
+      );
+
+      const [byStatus, byMode, byCountry, byOrg, bySector, overTime] = await Promise.all([
+        group('r.status'),
+        group('r.attendance_mode'),
+        group("COALESCE(c.name, 'Not given')", 'LEFT JOIN users u ON u.id = r.user_id LEFT JOIN countries c ON c.iso2 = u.country_code'),
+        group("COALESCE(NULLIF(u.organization, ''), 'Not given')", 'LEFT JOIN users u ON u.id = r.user_id'),
+        group("COALESCE(s.label, 'Not given')", 'LEFT JOIN users u ON u.id = r.user_id LEFT JOIN sectors s ON s.id = u.sector_id'),
+        sequelize.query(
+          `SELECT DATE(r.created_at) AS day, COUNT(*) AS count
+             FROM registrations r
+            WHERE r.event_id = :eventId AND r.deleted_at IS NULL
+            GROUP BY DATE(r.created_at)
+            ORDER BY day ASC`,
+          { replacements, type: sequelize.QueryTypes.SELECT },
+        ),
+      ]);
+
+      const [inPerson, virtual] = await Promise.all([
+        eventService.capacityStatus(req.event, 'IN_PERSON'),
+        eventService.capacityStatus(req.event, 'VIRTUAL'),
+      ]);
+
+      const tally = (rows) => rows.reduce((acc, r) => {
+        acc[r.label] = Number(r.count);
+        return acc;
+      }, {});
+
+      const statuses = tally(byStatus);
+      const total = Object.values(statuses).reduce((a, b) => a + b, 0);
+
+      return ok(res, {
+        eventId: String(eventId),
+        totals: {
+          all: total,
+          confirmed: statuses.CONFIRMED ?? 0,
+          pendingPayment: statuses.PENDING_PAYMENT ?? 0,
+          waitlisted: statuses.WAITLISTED ?? 0,
+          cancelled: (statuses.CANCELLED ?? 0) + (statuses.REFUNDED ?? 0),
+        },
+        byStatus: statuses,
+        byAttendanceMode: tally(byMode),
+        capacity: { inPerson, virtual },
+        // Top ten only: the admin page shows a leaderboard, not a directory.
+        topCountries: byCountry.slice(0, 10).map((r) => ({ name: r.label, count: Number(r.count) })),
+        topOrganizations: byOrg.slice(0, 10).map((r) => ({ name: r.label, count: Number(r.count) })),
+        bySector: bySector.map((r) => ({ name: r.label, count: Number(r.count) })),
+        registrationsPerDay: overTime.map((r) => ({ day: r.day, count: Number(r.count) })),
+        distinctCountries: byCountry.filter((r) => r.label !== 'Not given').length,
+        distinctOrganizations: byOrg.filter((r) => r.label !== 'Not given').length,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
 // --- create and edit --------------------------------------------------------
 const toColumns = (b) => ({
   title: b.title,
