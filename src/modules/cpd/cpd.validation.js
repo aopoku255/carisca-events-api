@@ -138,3 +138,11 @@ export default {
   createEventSchema, updateEventSchema, idParam, slugParam, transitionSchema,
   questionsSchema, pricesSchema, sessionsSchema, speakersSchema, listEventsSchema,
 };
+
+export const eventPartnersSchema = z.object({
+  partners: z.array(z.object({
+    partnerId: z.coerce.number().int().positive(),
+    role: z.enum(['PARTNER', 'SPONSOR', 'HOST', 'FUNDER', 'ACCREDITOR', 'SUPPORTER']).default('PARTNER'),
+    sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  })).max(40),
+});

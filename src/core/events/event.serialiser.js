@@ -31,7 +31,22 @@ function base(event) {
     issuesCertificate: !!event.issues_certificate,
     // Public: banners are marked PUBLIC at upload, so the URL needs no auth.
     banner: serialiseFile(event.banner),
+    partners: partners(event),
   };
+}
+
+function partners(event) {
+  if (!event.partners) return undefined;
+  return [...event.partners]
+    .sort((a, b) => (a.EventPartner?.sort_order ?? 0) - (b.EventPartner?.sort_order ?? 0))
+    .map((p) => ({
+      id: String(p.id),
+      name: p.name,
+      shortName: p.short_name ?? null,
+      websiteUrl: p.website_url ?? null,
+      logo: serialiseFile(p.logo),
+      role: p.EventPartner?.role ?? 'PARTNER',
+    }));
 }
 
 function prices(event) {

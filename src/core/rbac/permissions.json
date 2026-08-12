@@ -1,67 +1,343 @@
 {
   "$comment": "Single source of truth for permissions and the seeded default roles. Read by the CJS seeder and by the ESM runtime (see registry.js), so a permission cannot be referenced in code without existing in the database. Adding a module means adding its permissions here and re-running the sync.",
-
   "permissions": [
-    { "key": "events.view", "module": "core", "resource": "event", "action": "view", "description": "View events across all modules" },
-
-    { "key": "cpd.view", "module": "cpd", "resource": "event", "action": "view", "description": "View CPD events including drafts" },
-    { "key": "cpd.create", "module": "cpd", "resource": "event", "action": "create", "description": "Create a CPD event" },
-    { "key": "cpd.update", "module": "cpd", "resource": "event", "action": "update", "description": "Edit a CPD event" },
-    { "key": "cpd.delete", "module": "cpd", "resource": "event", "action": "delete", "description": "Delete a draft CPD event" },
-    { "key": "cpd.publish", "module": "cpd", "resource": "event", "action": "publish", "description": "Publish a CPD event and open registration" },
-    { "key": "cpd.approve", "module": "cpd", "resource": "event", "action": "approve", "description": "Approve a CPD event submitted for review" },
-    { "key": "cpd.cancel", "module": "cpd", "resource": "event", "action": "cancel", "description": "Cancel a CPD event and trigger refunds" },
-    { "key": "cpd.archive", "module": "cpd", "resource": "event", "action": "archive", "description": "Archive a completed CPD event" },
-    { "key": "cpd.question.manage", "module": "cpd", "resource": "question", "action": "manage", "description": "Configure registration questions" },
-
-    { "key": "cpd.registration.view", "module": "cpd", "resource": "registration", "action": "view", "description": "View CPD registrations" },
-    { "key": "cpd.registration.create", "module": "cpd", "resource": "registration", "action": "create", "description": "Register a participant on their behalf" },
-    { "key": "cpd.registration.update", "module": "cpd", "resource": "registration", "action": "update", "description": "Amend a registration" },
-    { "key": "cpd.registration.approve", "module": "cpd", "resource": "registration", "action": "approve", "description": "Approve or resolve a flagged registration" },
-    { "key": "cpd.registration.cancel", "module": "cpd", "resource": "registration", "action": "cancel", "description": "Cancel a registration" },
-    { "key": "cpd.registration.export", "module": "cpd", "resource": "registration", "action": "export", "description": "Export participant data" },
-
-    { "key": "attendance.view", "module": "attendance", "resource": "attendance", "action": "view", "description": "View attendance records" },
-    { "key": "attendance.mark", "module": "attendance", "resource": "attendance", "action": "mark", "description": "Check participants in and out" },
-    { "key": "attendance.import", "module": "attendance", "resource": "attendance", "action": "import", "description": "Bulk import attendance" },
-    { "key": "attendance.export", "module": "attendance", "resource": "attendance", "action": "export", "description": "Export attendance records" },
-
-    { "key": "payment.view", "module": "payment", "resource": "payment", "action": "view", "description": "View payments and transactions" },
-    { "key": "payment.refund", "module": "payment", "resource": "payment", "action": "refund", "description": "Issue full or partial refunds" },
-    { "key": "payment.export", "module": "payment", "resource": "payment", "action": "export", "description": "Export financial transactions" },
-    { "key": "payment.config", "module": "payment", "resource": "config", "action": "manage", "description": "Configure provider routing rules" },
-    { "key": "payment.reconcile", "module": "payment", "resource": "payment", "action": "reconcile", "description": "Trigger payment reconciliation" },
-
-    { "key": "certificate.view", "module": "certificate", "resource": "certificate", "action": "view", "description": "View issued certificates" },
-    { "key": "certificate.generate", "module": "certificate", "resource": "certificate", "action": "generate", "description": "Generate certificates for eligible participants" },
-    { "key": "certificate.revoke", "module": "certificate", "resource": "certificate", "action": "revoke", "description": "Revoke an issued certificate" },
-    { "key": "certificate.template.manage", "module": "certificate", "resource": "template", "action": "manage", "description": "Manage certificate templates" },
-
-    { "key": "evaluation.view", "module": "evaluation", "resource": "evaluation", "action": "view", "description": "View evaluation responses" },
-    { "key": "evaluation.manage", "module": "evaluation", "resource": "evaluation", "action": "manage", "description": "Build and configure evaluation forms" },
-    { "key": "evaluation.export", "module": "evaluation", "resource": "evaluation", "action": "export", "description": "Export evaluation data" },
-
-    { "key": "reports.view", "module": "reports", "resource": "report", "action": "view", "description": "View programme reports" },
-    { "key": "reports.export", "module": "reports", "resource": "report", "action": "export", "description": "Export reports to CSV or Excel" },
-    { "key": "reports.financial", "module": "reports", "resource": "report", "action": "financial", "description": "View financial reporting and revenue" },
-
-    { "key": "users.view", "module": "users", "resource": "user", "action": "view", "description": "View user accounts" },
-    { "key": "users.create", "module": "users", "resource": "user", "action": "create", "description": "Create staff accounts" },
-    { "key": "users.update", "module": "users", "resource": "user", "action": "update", "description": "Edit user accounts" },
-    { "key": "users.deactivate", "module": "users", "resource": "user", "action": "deactivate", "description": "Deactivate or suspend an account" },
-
-    { "key": "rbac.view", "module": "rbac", "resource": "role", "action": "view", "description": "View roles and permissions" },
-    { "key": "rbac.manage", "module": "rbac", "resource": "role", "action": "manage", "description": "Create roles and assign permissions" },
-
-    { "key": "system.settings", "module": "system", "resource": "settings", "action": "manage", "description": "Change system configuration" },
-    { "key": "system.integrations", "module": "system", "resource": "integrations", "action": "manage", "description": "Manage third-party integrations" },
-
-    { "key": "audit.view", "module": "audit", "resource": "audit", "action": "view", "description": "Read the audit log" },
-
-    { "key": "files.upload", "module": "files", "resource": "file", "action": "upload", "description": "Upload files" },
-    { "key": "files.manage", "module": "files", "resource": "file", "action": "manage", "description": "Manage and delete any file" }
+    {
+      "key": "events.view",
+      "module": "core",
+      "resource": "event",
+      "action": "view",
+      "description": "View events across all modules"
+    },
+    {
+      "key": "cpd.view",
+      "module": "cpd",
+      "resource": "event",
+      "action": "view",
+      "description": "View CPD events including drafts"
+    },
+    {
+      "key": "cpd.create",
+      "module": "cpd",
+      "resource": "event",
+      "action": "create",
+      "description": "Create a CPD event"
+    },
+    {
+      "key": "cpd.update",
+      "module": "cpd",
+      "resource": "event",
+      "action": "update",
+      "description": "Edit a CPD event"
+    },
+    {
+      "key": "cpd.delete",
+      "module": "cpd",
+      "resource": "event",
+      "action": "delete",
+      "description": "Delete a draft CPD event"
+    },
+    {
+      "key": "cpd.publish",
+      "module": "cpd",
+      "resource": "event",
+      "action": "publish",
+      "description": "Publish a CPD event and open registration"
+    },
+    {
+      "key": "cpd.approve",
+      "module": "cpd",
+      "resource": "event",
+      "action": "approve",
+      "description": "Approve a CPD event submitted for review"
+    },
+    {
+      "key": "cpd.cancel",
+      "module": "cpd",
+      "resource": "event",
+      "action": "cancel",
+      "description": "Cancel a CPD event and trigger refunds"
+    },
+    {
+      "key": "cpd.archive",
+      "module": "cpd",
+      "resource": "event",
+      "action": "archive",
+      "description": "Archive a completed CPD event"
+    },
+    {
+      "key": "cpd.question.manage",
+      "module": "cpd",
+      "resource": "question",
+      "action": "manage",
+      "description": "Configure registration questions"
+    },
+    {
+      "key": "cpd.registration.view",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "view",
+      "description": "View CPD registrations"
+    },
+    {
+      "key": "cpd.registration.create",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "create",
+      "description": "Register a participant on their behalf"
+    },
+    {
+      "key": "cpd.registration.update",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "update",
+      "description": "Amend a registration"
+    },
+    {
+      "key": "cpd.registration.approve",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "approve",
+      "description": "Approve or resolve a flagged registration"
+    },
+    {
+      "key": "cpd.registration.cancel",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "cancel",
+      "description": "Cancel a registration"
+    },
+    {
+      "key": "cpd.registration.export",
+      "module": "cpd",
+      "resource": "registration",
+      "action": "export",
+      "description": "Export participant data"
+    },
+    {
+      "key": "attendance.view",
+      "module": "attendance",
+      "resource": "attendance",
+      "action": "view",
+      "description": "View attendance records"
+    },
+    {
+      "key": "attendance.mark",
+      "module": "attendance",
+      "resource": "attendance",
+      "action": "mark",
+      "description": "Check participants in and out"
+    },
+    {
+      "key": "attendance.import",
+      "module": "attendance",
+      "resource": "attendance",
+      "action": "import",
+      "description": "Bulk import attendance"
+    },
+    {
+      "key": "attendance.export",
+      "module": "attendance",
+      "resource": "attendance",
+      "action": "export",
+      "description": "Export attendance records"
+    },
+    {
+      "key": "payment.view",
+      "module": "payment",
+      "resource": "payment",
+      "action": "view",
+      "description": "View payments and transactions"
+    },
+    {
+      "key": "payment.refund",
+      "module": "payment",
+      "resource": "payment",
+      "action": "refund",
+      "description": "Issue full or partial refunds"
+    },
+    {
+      "key": "payment.export",
+      "module": "payment",
+      "resource": "payment",
+      "action": "export",
+      "description": "Export financial transactions"
+    },
+    {
+      "key": "payment.config",
+      "module": "payment",
+      "resource": "config",
+      "action": "manage",
+      "description": "Configure provider routing rules"
+    },
+    {
+      "key": "payment.reconcile",
+      "module": "payment",
+      "resource": "payment",
+      "action": "reconcile",
+      "description": "Trigger payment reconciliation"
+    },
+    {
+      "key": "certificate.view",
+      "module": "certificate",
+      "resource": "certificate",
+      "action": "view",
+      "description": "View issued certificates"
+    },
+    {
+      "key": "certificate.generate",
+      "module": "certificate",
+      "resource": "certificate",
+      "action": "generate",
+      "description": "Generate certificates for eligible participants"
+    },
+    {
+      "key": "certificate.revoke",
+      "module": "certificate",
+      "resource": "certificate",
+      "action": "revoke",
+      "description": "Revoke an issued certificate"
+    },
+    {
+      "key": "certificate.template.manage",
+      "module": "certificate",
+      "resource": "template",
+      "action": "manage",
+      "description": "Manage certificate templates"
+    },
+    {
+      "key": "evaluation.view",
+      "module": "evaluation",
+      "resource": "evaluation",
+      "action": "view",
+      "description": "View evaluation responses"
+    },
+    {
+      "key": "evaluation.manage",
+      "module": "evaluation",
+      "resource": "evaluation",
+      "action": "manage",
+      "description": "Build and configure evaluation forms"
+    },
+    {
+      "key": "evaluation.export",
+      "module": "evaluation",
+      "resource": "evaluation",
+      "action": "export",
+      "description": "Export evaluation data"
+    },
+    {
+      "key": "reports.view",
+      "module": "reports",
+      "resource": "report",
+      "action": "view",
+      "description": "View programme reports"
+    },
+    {
+      "key": "reports.export",
+      "module": "reports",
+      "resource": "report",
+      "action": "export",
+      "description": "Export reports to CSV or Excel"
+    },
+    {
+      "key": "reports.financial",
+      "module": "reports",
+      "resource": "report",
+      "action": "financial",
+      "description": "View financial reporting and revenue"
+    },
+    {
+      "key": "users.view",
+      "module": "users",
+      "resource": "user",
+      "action": "view",
+      "description": "View user accounts"
+    },
+    {
+      "key": "users.create",
+      "module": "users",
+      "resource": "user",
+      "action": "create",
+      "description": "Create staff accounts"
+    },
+    {
+      "key": "users.update",
+      "module": "users",
+      "resource": "user",
+      "action": "update",
+      "description": "Edit user accounts"
+    },
+    {
+      "key": "users.deactivate",
+      "module": "users",
+      "resource": "user",
+      "action": "deactivate",
+      "description": "Deactivate or suspend an account"
+    },
+    {
+      "key": "rbac.view",
+      "module": "rbac",
+      "resource": "role",
+      "action": "view",
+      "description": "View roles and permissions"
+    },
+    {
+      "key": "rbac.manage",
+      "module": "rbac",
+      "resource": "role",
+      "action": "manage",
+      "description": "Create roles and assign permissions"
+    },
+    {
+      "key": "system.settings",
+      "module": "system",
+      "resource": "settings",
+      "action": "manage",
+      "description": "Change system configuration"
+    },
+    {
+      "key": "system.integrations",
+      "module": "system",
+      "resource": "integrations",
+      "action": "manage",
+      "description": "Manage third-party integrations"
+    },
+    {
+      "key": "audit.view",
+      "module": "audit",
+      "resource": "audit",
+      "action": "view",
+      "description": "Read the audit log"
+    },
+    {
+      "key": "files.upload",
+      "module": "files",
+      "resource": "file",
+      "action": "upload",
+      "description": "Upload files"
+    },
+    {
+      "key": "files.manage",
+      "module": "files",
+      "resource": "file",
+      "action": "manage",
+      "description": "Manage and delete any file"
+    },
+    {
+      "key": "partners.view",
+      "module": "core",
+      "resource": "partner",
+      "action": "view",
+      "description": "See partner organizations"
+    },
+    {
+      "key": "partners.manage",
+      "module": "core",
+      "resource": "partner",
+      "action": "manage",
+      "description": "Add, edit and remove partner organizations"
+    }
   ],
-
   "roles": [
     {
       "key": "super_admin",
@@ -76,15 +352,23 @@
       "description": "Organisation-wide visibility, approvals and reporting. Can approve and publish events but does not administer them day to day.",
       "is_system": true,
       "permissions": [
-        "events.view", "cpd.view", "cpd.publish", "cpd.approve",
-        "cpd.registration.view", "cpd.registration.export",
+        "events.view",
+        "cpd.view",
+        "cpd.publish",
+        "cpd.approve",
+        "cpd.registration.view",
+        "cpd.registration.export",
         "attendance.view",
         "payment.view",
-        "certificate.view", "certificate.revoke",
+        "certificate.view",
+        "certificate.revoke",
         "evaluation.view",
-        "reports.view", "reports.export", "reports.financial",
+        "reports.view",
+        "reports.export",
+        "reports.financial",
         "users.view",
-        "audit.view"
+        "audit.view",
+        "partners.view"
       ]
     },
     {
@@ -94,16 +378,33 @@
       "is_system": true,
       "permissions": [
         "events.view",
-        "cpd.view", "cpd.create", "cpd.update", "cpd.delete", "cpd.cancel", "cpd.archive", "cpd.question.manage",
-        "cpd.registration.view", "cpd.registration.create", "cpd.registration.update",
-        "cpd.registration.approve", "cpd.registration.cancel", "cpd.registration.export",
-        "attendance.view", "attendance.mark", "attendance.import", "attendance.export",
+        "cpd.view",
+        "cpd.create",
+        "cpd.update",
+        "cpd.delete",
+        "cpd.cancel",
+        "cpd.archive",
+        "cpd.question.manage",
+        "cpd.registration.view",
+        "cpd.registration.create",
+        "cpd.registration.update",
+        "cpd.registration.approve",
+        "cpd.registration.cancel",
+        "cpd.registration.export",
+        "attendance.view",
+        "attendance.mark",
+        "attendance.import",
+        "attendance.export",
         "payment.view",
-        "certificate.view", "certificate.generate",
+        "certificate.view",
+        "certificate.generate",
         "evaluation.view",
-        "reports.view", "reports.export",
+        "reports.view",
+        "reports.export",
         "users.view",
-        "files.upload"
+        "files.upload",
+        "partners.view",
+        "partners.manage"
       ]
     },
     {
@@ -112,12 +413,19 @@
       "description": "Programme metrics, participant demographics, attendance and evaluation. No financial or system access.",
       "is_system": true,
       "permissions": [
-        "events.view", "cpd.view",
-        "cpd.registration.view", "cpd.registration.export",
-        "attendance.view", "attendance.export",
+        "events.view",
+        "cpd.view",
+        "cpd.registration.view",
+        "cpd.registration.export",
+        "attendance.view",
+        "attendance.export",
         "certificate.view",
-        "evaluation.view", "evaluation.manage", "evaluation.export",
-        "reports.view", "reports.export"
+        "evaluation.view",
+        "evaluation.manage",
+        "evaluation.export",
+        "reports.view",
+        "reports.export",
+        "partners.view"
       ]
     },
     {
@@ -126,11 +434,19 @@
       "description": "Payments, refunds, reconciliation and financial reporting. Deliberately holds no system or user administration.",
       "is_system": true,
       "permissions": [
-        "events.view", "cpd.view",
+        "events.view",
+        "cpd.view",
         "cpd.registration.view",
-        "payment.view", "payment.refund", "payment.export", "payment.config", "payment.reconcile",
-        "reports.view", "reports.export", "reports.financial",
-        "audit.view"
+        "payment.view",
+        "payment.refund",
+        "payment.export",
+        "payment.config",
+        "payment.reconcile",
+        "reports.view",
+        "reports.export",
+        "reports.financial",
+        "audit.view",
+        "partners.view"
       ]
     },
     {
@@ -139,9 +455,14 @@
       "description": "Users, roles, configuration, integrations and logs. Deliberately holds no access to payments or participant exports.",
       "is_system": true,
       "permissions": [
-        "users.view", "users.create", "users.update", "users.deactivate",
-        "rbac.view", "rbac.manage",
-        "system.settings", "system.integrations",
+        "users.view",
+        "users.create",
+        "users.update",
+        "users.deactivate",
+        "rbac.view",
+        "rbac.manage",
+        "system.settings",
+        "system.integrations",
         "audit.view",
         "files.manage"
       ]
@@ -152,15 +473,18 @@
       "description": "Door and desk role for event day: look up a participant and record attendance. Nothing else.",
       "is_system": true,
       "permissions": [
-        "events.view", "cpd.view",
+        "events.view",
+        "cpd.view",
         "cpd.registration.view",
-        "attendance.view", "attendance.mark"
+        "attendance.view",
+        "attendance.mark",
+        "partners.view"
       ]
     },
     {
       "key": "participant",
       "name": "Participant",
-      "description": "Default role for public users. Holds no permissions at all — access to their own registrations, payments and certificates is by ownership, not by permission.",
+      "description": "Default role for public users. Holds no permissions at all \u2014 access to their own registrations, payments and certificates is by ownership, not by permission.",
       "is_system": true,
       "permissions": []
     }

@@ -8,6 +8,7 @@ import defineIdentity from './identity.js';
 import defineSystem from './system.js';
 import defineEvent from './event.js';
 import defineRegistration from './registration.js';
+import definePartner from './partner.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -25,6 +26,7 @@ Object.assign(registry, defineIdentity(sequelize));
 Object.assign(registry, defineSystem(sequelize));
 Object.assign(registry, defineEvent(sequelize));
 Object.assign(registry, defineRegistration(sequelize));
+Object.assign(registry, definePartner(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
@@ -34,6 +36,7 @@ const {
   EventType, Event, EventPrice, CpdEventDetail,
   EventSession, EventSpeaker, RegistrationQuestion,
   Registration, RegistrationAnswer, RegistrationStatusHistory, AttendanceRecord,
+  Partner, EventPartner,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -110,6 +113,22 @@ AttendanceRecord.belongsTo(Registration, { foreignKey: 'registration_id', as: 'r
 AttendanceRecord.belongsTo(EventSession, { foreignKey: 'session_id', as: 'session' });
 AttendanceRecord.belongsTo(User, { foreignKey: 'recorded_by', as: 'recordedBy' });
 EventSession.hasMany(AttendanceRecord, { foreignKey: 'session_id', as: 'attendance' });
+
+Partner.belongsTo(File, { foreignKey: 'logo_file_id', as: 'logo' });
+Partner.belongsTo(Country, { foreignKey: 'country_code', as: 'country' });
+
+/**
+ * Partners attach to `events`, not to a module table, so Summit and Business
+ * Forum list their partners through the same association.
+ */
+Event.belongsToMany(Partner, {
+  through: EventPartner, foreignKey: 'event_id', otherKey: 'partner_id', as: 'partners',
+});
+Partner.belongsToMany(Event, {
+  through: EventPartner, foreignKey: 'partner_id', otherKey: 'event_id', as: 'events',
+});
+EventPartner.belongsTo(Partner, { foreignKey: 'partner_id', as: 'partner' });
+EventPartner.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });

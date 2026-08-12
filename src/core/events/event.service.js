@@ -28,6 +28,12 @@ export const DETAIL_INCLUDE = [
   { model: CpdEventDetail, as: 'cpd' },
   { model: Country, as: 'country' },
   { model: models.File, as: 'banner' },
+  {
+    model: models.Partner,
+    as: 'partners',
+    through: { attributes: ['role', 'sort_order'] },
+    include: [{ model: models.File, as: 'logo' }],
+  },
 ];
 
 async function uniqueSlug(title) {

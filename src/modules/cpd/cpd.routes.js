@@ -13,7 +13,10 @@ import {
 import { record as audit } from '../../core/audit/audit.service.js';
 import * as schema from './cpd.validation.js';
 
-const { Event, EventType, EventPrice, EventSession, EventSpeaker, RegistrationQuestion } = models;
+const {
+  Event, EventType, EventPrice, EventSession, EventSpeaker,
+  RegistrationQuestion, EventPartner,
+} = models;
 
 const MODULE_KEY = 'cpd';
 
@@ -423,6 +426,47 @@ router.put('/events/:id/speakers',
         }
       });
       return ok(res, serialiseAdminEvent(await eventService.findById(eventId)), 'Speakers saved.');
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * Who CARISCA is running this with. Replaces the whole set in one call, the
+ * same shape as questions and prices.
+ */
+router.put('/events/:id/partners',
+  requirePermission('cpd.update'),
+  validate({ params: schema.idParam, body: schema.eventPartnersSchema }),
+  loadCpdEvent,
+  async (req, res, next) => {
+    try {
+      const eventId = req.params.id;
+
+      await sequelize.transaction(async (transaction) => {
+        await EventPartner.destroy({ where: { event_id: eventId }, transaction });
+        if (req.body.partners.length) {
+          await EventPartner.bulkCreate(
+            req.body.partners.map((p, i) => ({
+              event_id: eventId,
+              partner_id: p.partnerId,
+              role: p.role,
+              sort_order: p.sortOrder || (i + 1) * 10,
+            })),
+            { transaction },
+          );
+        }
+        await audit({
+          actor: actorOf(req),
+          action: 'event.partners_updated',
+          resourceType: 'event',
+          resourceId: eventId,
+          after: { partners: req.body.partners.length },
+          context: contextOf(req),
+        }, { transaction });
+      });
+
+      return ok(res, serialiseAdminEvent(await eventService.findById(eventId)), 'Partners saved.');
     } catch (err) {
       return next(err);
     }
