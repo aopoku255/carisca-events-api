@@ -1,4 +1,5 @@
 import { serialiseMoney } from '../../lib/money.js';
+import { serialiseFile } from '../files/storage.service.js';
 
 /**
  * Two views of an event. The public one omits anything operational — who
@@ -28,6 +29,8 @@ function base(event) {
     registrationClosesAt: event.registration_closes_at ?? null,
     status: event.status,
     issuesCertificate: !!event.issues_certificate,
+    // Public: banners are marked PUBLIC at upload, so the URL needs no auth.
+    banner: serialiseFile(event.banner),
   };
 }
 

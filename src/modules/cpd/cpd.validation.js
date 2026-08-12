@@ -14,6 +14,7 @@ const eventBody = z.object({
   title: z.string().trim().min(3).max(255),
   shortDescription: z.string().trim().max(500).optional(),
   description: z.string().trim().max(50_000).optional(),
+  bannerFileId: z.coerce.number().int().positive().nullable().optional(),
   startAt: iso,
   endAt: iso,
   timezone: z.string().trim().max(64).default('Africa/Accra'),

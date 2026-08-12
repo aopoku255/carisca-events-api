@@ -179,6 +179,7 @@ const toColumns = (b) => ({
   title: b.title,
   short_description: b.shortDescription,
   description: b.description,
+  banner_file_id: b.bannerFileId,
   start_at: b.startAt,
   end_at: b.endAt,
   timezone: b.timezone,

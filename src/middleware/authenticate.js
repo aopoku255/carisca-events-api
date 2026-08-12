@@ -69,6 +69,23 @@ export async function loadPermissions(req, res, next) {
   }
 }
 
+/**
+ * Resolves permissions when there is a caller, and quietly moves on when there
+ * is not.
+ *
+ * For resources that are public for some rows and restricted for others — a
+ * file, a certificate verification — where the route must serve anonymous
+ * callers but still honour a signed-in user's rights.
+ */
+export async function loadPermissionsOptional(req, res, next) {
+  try {
+    req.permissions = req.user ? await getPermissions(req.user.id) : new Set();
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
 function ensurePermissionsLoaded(req) {
   if (!req.permissions) {
     throw new Error(
@@ -162,6 +179,7 @@ export default {
   authenticate,
   optionalAuthenticate,
   loadPermissions,
+  loadPermissionsOptional,
   requirePermission,
   requireAnyPermission,
   requireStaff,

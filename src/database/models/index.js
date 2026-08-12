@@ -73,6 +73,7 @@ Event.belongsTo(Department, { foreignKey: 'organizer_department_id', as: 'organi
 Event.hasMany(EventPrice, { foreignKey: 'event_id', as: 'prices' });
 EventPrice.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 EventPrice.belongsTo(Currency, { foreignKey: 'currency', as: 'currencyRef' });
+Event.belongsTo(File, { foreignKey: 'banner_file_id', as: 'banner' });
 Event.hasOne(CpdEventDetail, { foreignKey: 'event_id', as: 'cpd' });
 CpdEventDetail.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 

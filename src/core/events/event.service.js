@@ -27,6 +27,7 @@ export const DETAIL_INCLUDE = [
   { model: RegistrationQuestion, as: 'questions', separate: true, order: [['sort_order', 'ASC']] },
   { model: CpdEventDetail, as: 'cpd' },
   { model: Country, as: 'country' },
+  { model: models.File, as: 'banner' },
 ];
 
 async function uniqueSlug(title) {
