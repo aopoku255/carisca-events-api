@@ -11,6 +11,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "worker": "node worker.js",
+    "mail:test": "node scripts/send-test-email.js",
+    "storage:test": "node scripts/test-storage.js",
     "sq": "sequelize-cli --config src/database/cli-config.cjs --migrations-path src/database/migrations --seeders-path src/database/seeders",
     "db:create": "npm run sq -- db:create",
     "db:drop": "npm run sq -- db:drop",
@@ -25,6 +27,9 @@
     "lint": "eslint src tests"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1111.0",
+    "@aws-sdk/s3-request-presigner": "^3.1111.0",
+    "@googleapis/drive": "^21.0.0",
     "argon2": "^0.41.1",
     "bullmq": "^5.34.2",
     "compression": "^1.7.5",
@@ -37,6 +42,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.2",
     "mysql2": "^3.12.0",
+    "nodemailer": "^6.10.1",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "rate-limit-redis": "^4.2.0",

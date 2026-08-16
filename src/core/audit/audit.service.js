@@ -18,11 +18,16 @@ const SENSITIVE_KEYS = new Set([
 /** Strips secrets from before/after snapshots before they reach the log. */
 export function scrub(value) {
   if (!value || typeof value !== 'object') return value ?? null;
+  // A Date has no enumerable own properties, so walking it as a plain object
+  // flattens it to {} and the snapshot loses the timestamp entirely. Same for
+  // anything else that only survives as its serialised form.
+  if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(scrub);
 
   const out = {};
   for (const [k, v] of Object.entries(value)) {
     if (SENSITIVE_KEYS.has(k)) out[k] = '[redacted]';
+    else if (v instanceof Date) out[k] = v.toISOString();
     else if (v && typeof v === 'object') out[k] = scrub(v);
     else out[k] = v;
   }

@@ -122,7 +122,9 @@ export async function dispatchOnce({ limit = BATCH } = {}) {
       });
       sent += 1;
     } catch (err) {
-      const giveUp = attempts >= MAX_ATTEMPTS;
+      // A permanent rejection (bad mailbox, refused sender) fails the same way
+      // every time, so retrying it only delays the operator noticing.
+      const giveUp = err.permanent === true || attempts >= MAX_ATTEMPTS;
       // eslint-disable-next-line no-await-in-loop
       await write({
         status: giveUp ? 'FAILED' : 'PENDING',
@@ -135,7 +137,9 @@ export async function dispatchOnce({ limit = BATCH } = {}) {
       logger[giveUp ? 'error' : 'warn']({
         notificationId: notification.id,
         template: notification.template,
+        to: notification.to_address,
         attempts,
+        permanent: err.permanent === true,
         err: err.message,
       }, giveUp ? 'notification permanently failed' : 'notification delivery failed, will retry');
     }

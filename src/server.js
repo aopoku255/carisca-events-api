@@ -9,11 +9,10 @@ import { logger } from './lib/logger.js';
 async function start() {
   await connect();
 
-  // Reconcile permissions.json into the database, so a permission referenced
-  // in code always exists as a row.
+  
   await syncPermissions();
 
-  // Currency exponents are read once and cached; nothing may assume 2 decimals.
+  
   await loadCurrencyExponents(sequelize);
 
   const app = createApp();
@@ -28,7 +27,7 @@ async function start() {
       await closeRedis().catch(() => {});
       process.exit(0);
     });
-    // Do not wait forever for in-flight requests to drain.
+    
     setTimeout(() => process.exit(1), 10_000).unref();
   };
 

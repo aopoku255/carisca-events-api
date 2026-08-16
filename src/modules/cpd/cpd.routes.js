@@ -11,6 +11,7 @@ import {
   authenticate, requireStaff, loadPermissions, requirePermission,
 } from '../../middleware/authenticate.js';
 import { record as audit } from '../../core/audit/audit.service.js';
+import { summariseResponses } from './response-summary.js';
 import * as schema from './cpd.validation.js';
 
 const {
@@ -171,6 +172,64 @@ router.get('/events/:id/summary',
         registrationsPerDay: overTime.map((r) => ({ day: r.day, count: Number(r.count) })),
         distinctCountries: byCountry.filter((r) => r.label !== 'Not given').length,
         distinctOrganizations: byOrg.filter((r) => r.label !== 'Not given').length,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * Per-question aggregates of what participants answered — the summary view of
+ * the registration form.
+ *
+ * Counted in JavaScript rather than SQL because multi-select answers live as a
+ * JSON array in a single column: a GROUP BY would bucket every distinct
+ * combination separately. Answers are loaded for one event at a time and the
+ * question count is capped at 60, so the working set stays small.
+ */
+router.get('/events/:id/responses',
+  requirePermission('cpd.registration.view'),
+  validate({ params: schema.idParam }),
+  loadCpdEvent,
+  async (req, res, next) => {
+    try {
+      const eventId = req.params.id;
+
+      const questions = await RegistrationQuestion.findAll({
+        where: { event_id: eventId },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']],
+      });
+
+      // Cancelled and refunded registrations are excluded: a summary of what
+      // the attending group said should not be moved by people who withdrew.
+      const countable = { [Op.notIn]: ['CANCELLED', 'REFUNDED'] };
+
+      const [responses, answers] = await Promise.all([
+        models.Registration.count({ where: { event_id: eventId, status: countable } }),
+        questions.length
+          ? sequelize.query(
+            `SELECT ra.question_id, ra.value
+               FROM registration_answers ra
+               JOIN registrations r ON r.id = ra.registration_id
+              WHERE r.event_id = :eventId
+                AND r.deleted_at IS NULL
+                AND r.status NOT IN ('CANCELLED', 'REFUNDED')
+              ORDER BY ra.id ASC`,
+            { replacements: { eventId }, type: sequelize.QueryTypes.SELECT },
+          )
+          : [],
+      ]);
+
+      return ok(res, {
+        eventId: String(eventId),
+        responses,
+        questions: summariseResponses(
+          questions.map((q) => ({
+            id: q.id, label: q.label, type: q.type, is_required: q.is_required, options: q.options,
+          })),
+          answers,
+          responses,
+        ),
       });
     } catch (err) {
       return next(err);

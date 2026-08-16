@@ -27,7 +27,7 @@ export default function defineSystem(sequelize) {
   const File = sequelize.define('File', {
     id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
     storage_provider: {
-      type: DataTypes.ENUM('local', 's3', 'gcs'),
+      type: DataTypes.ENUM('local', 's3', 'gcs', 'r2', 'gdrive'),
       allowNull: false,
       defaultValue: 'local',
     },

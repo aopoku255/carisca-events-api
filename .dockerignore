@@ -1,0 +1,32 @@
+# Keeping these out of the build context makes builds faster, images smaller,
+# and — for the secrets below — is the difference between a credential living
+# on your laptop and a credential baked into a distributable image layer.
+
+node_modules
+npm-debug.log*
+
+# Secrets. Never copy these in; supply them at runtime.
+.env
+.env.*
+!.env.example
+service-account.json
+*-service-account.json
+gcp-*.json
+
+# Local state
+storage/
+coverage/
+*.log
+
+# Not needed to run the service
+tests/
+jest.config.js
+README.md
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+Dockerfile
+.dockerignore

@@ -35,7 +35,10 @@ export function serialiseUser(user, { permissions = null } = {}) {
     emailVerified: !!user.email_verified_at,
     departmentId: user.department_id ? String(user.department_id) : null,
     lastLoginAt: user.last_login_at ?? null,
-    createdAt: user.created_at,
+    // `timestamps: true` names this attribute createdAt even under
+    // `underscored: true` — that option renames the column, not the attribute.
+    // Reading user.created_at alone returned undefined on every response.
+    createdAt: user.createdAt ?? user.created_at ?? null,
   };
 
   if (user.roles) {

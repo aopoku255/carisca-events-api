@@ -3,6 +3,7 @@ import { connect, disconnect, sequelize } from './src/database/models/index.js';
 import { closeRedis } from './src/config/redis.js';
 import { loadCurrencyExponents } from './src/lib/money.js';
 import { dispatchOnce } from './src/jobs/workers/notification-dispatcher.js';
+import { verifyMailer, closeMailer } from './src/core/notifications/channels/mail.js';
 import { sweepExpiredHolds } from './src/core/registrations/registration.service.js';
 import { logger } from './src/lib/logger.js';
 
@@ -47,13 +48,20 @@ async function start() {
   await connect();
   await loadCurrencyExponents(sequelize);
 
-  logger.info({ jobs: JOBS.map((j) => j.name), env: env.NODE_ENV }, 'carisca worker started');
+  // Not fatal: the outbox holds mail safely while a relay is down, and a worker
+  // that refuses to start would also stop the hold sweeper from running.
+  await verifyMailer();
+
+  logger.info({
+    jobs: JOBS.map((j) => j.name), env: env.NODE_ENV, mailDriver: env.MAIL_DRIVER,
+  }, 'carisca worker started');
 
   const shutdown = async (signal) => {
     logger.info({ signal }, 'worker shutting down');
     running = false;
     // Let the current iteration finish rather than killing it mid-transaction.
     setTimeout(async () => {
+      await closeMailer().catch(() => {});
       await disconnect().catch(() => {});
       await closeRedis().catch(() => {});
       process.exit(0);

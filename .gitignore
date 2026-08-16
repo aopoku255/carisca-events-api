@@ -2,6 +2,11 @@ node_modules/
 .env
 .env.local
 .env.*.local
+
+# Google service account keys. These are live credentials — never commit one.
+service-account.json
+*-service-account.json
+gcp-*.json
 storage/
 coverage/
 dist/

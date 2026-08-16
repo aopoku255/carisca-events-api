@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { models } from '../../database/models/index.js';
 import env from '../../config/env.js';
 import { localDriver } from './drivers/local.js';
+import { driveDriver } from './drivers/gdrive.js';
+import { r2Driver } from './drivers/r2.js';
 import { AppError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 
@@ -13,9 +15,13 @@ const { File } = models;
  * Callers hand over a buffer and a purpose; they never learn where it went.
  * Swapping local disk for S3 or GCS is registering another driver here — no
  * controller changes.
+ *
+ * The provider is recorded per file, not read from configuration at read time,
+ * so switching STORAGE_DRIVER only affects new uploads. Everything already on
+ * disk keeps being served from disk.
  */
 
-const drivers = { local: localDriver };
+const drivers = { local: localDriver, gdrive: driveDriver, r2: r2Driver };
 
 function driverFor(provider = env.STORAGE_DRIVER) {
   const driver = drivers[provider];
@@ -141,11 +147,16 @@ export async function store({
   const key = `${purpose}/${new Date().getFullYear()}/${crypto.randomBytes(16).toString('hex')}.${extension}`;
 
   const driver = driverFor();
-  await driver.put(key, buffer);
+  /**
+   * The driver may address the object by something other than the key it was
+   * offered — Drive assigns its own file id — so what it hands back is what
+   * gets stored and used for every later read.
+   */
+  const stored = await driver.put(key, buffer, { mimeType: actualMime });
 
   const file = await File.create({
     storage_provider: driver.name,
-    storage_key: key,
+    storage_key: stored?.key ?? key,
     // Kept for display only; never used to build a path.
     original_name: String(originalName ?? 'upload').slice(0, 255),
     mime_type: actualMime,
@@ -166,12 +177,28 @@ export async function find(id) {
   return file;
 }
 
+/**
+ * A file the provider no longer has is a 404, not a 500. This is not
+ * hypothetical with Drive: the Shared Drive is browsable, so someone tidying it
+ * up can delete an object the database still points at. The row is left alone —
+ * it is the audit record of what was uploaded, and guessing that a read failure
+ * means "delete the metadata" would turn a transient outage into data loss.
+ */
+function rethrowMissing(err) {
+  if (err?.notFound) throw new NotFoundError('File');
+  throw err;
+}
+
 export async function streamFor(file) {
-  return driverFor(file.storage_provider).stream(file.storage_key);
+  return driverFor(file.storage_provider)
+    .stream(file.storage_key)
+    .catch(rethrowMissing);
 }
 
 export async function bufferFor(file) {
-  return driverFor(file.storage_provider).buffer(file.storage_key);
+  return driverFor(file.storage_provider)
+    .buffer(file.storage_key)
+    .catch(rethrowMissing);
 }
 
 export async function remove(file) {
