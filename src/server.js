@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import env from './config/env.js';
 import { connect, disconnect, sequelize } from './database/models/index.js';
 import { closeRedis } from './config/redis.js';
+import { closeBrowser } from './core/certificates/browser.js';
 import { syncPermissions } from './core/rbac/rbac.service.js';
 import { loadCurrencyExponents } from './lib/money.js';
 import { logger } from './lib/logger.js';
@@ -25,6 +26,7 @@ async function start() {
     server.close(async () => {
       await disconnect().catch(() => {});
       await closeRedis().catch(() => {});
+      await closeBrowser().catch(() => {});
       process.exit(0);
     });
     

@@ -116,6 +116,7 @@ export const speakerSchema = z.object({
   bio: z.string().trim().max(5000).optional(),
   role: z.enum(['SPEAKER', 'FACILITATOR', 'MODERATOR', 'PANELLIST']).default('SPEAKER'),
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  photoFileId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 export const speakersSchema = z.object({

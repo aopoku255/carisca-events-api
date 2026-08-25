@@ -93,12 +93,12 @@ router.post('/users',
   validate({ body: createUserSchema }),
   async (req, res, next) => {
     try {
-      const user = await createUser(req.body, {
+      const { user, welcomeEmailSent } = await createUser(req.body, {
         actor: { id: req.user.id, email: req.user.email },
         context: { ip: req.ip, userAgent: req.get('user-agent'), requestId: req.id },
       });
 
-      return created(res, serialiseUser(user), 'Account created.');
+      return created(res, { ...serialiseUser(user), welcomeEmailSent }, 'Account created.');
     } catch (err) {
       return next(err);
     }

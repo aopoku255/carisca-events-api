@@ -84,6 +84,7 @@ Event.hasMany(EventSession, { foreignKey: 'event_id', as: 'sessions' });
 EventSession.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 Event.hasMany(EventSpeaker, { foreignKey: 'event_id', as: 'speakers' });
 EventSpeaker.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+EventSpeaker.belongsTo(File, { foreignKey: 'photo_file_id', as: 'photo' });
 
 Event.hasMany(RegistrationQuestion, { foreignKey: 'event_id', as: 'questions' });
 RegistrationQuestion.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
@@ -98,6 +99,7 @@ Registration.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 User.hasMany(Registration, { foreignKey: 'user_id', as: 'registrations' });
 Registration.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Registration.belongsTo(File, { foreignKey: 'evidence_file_id', as: 'evidence' });
+Registration.belongsTo(User, { foreignKey: 'waived_by', as: 'waivedByUser' });
 
 Registration.hasMany(RegistrationAnswer, { foreignKey: 'registration_id', as: 'answers' });
 RegistrationAnswer.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });

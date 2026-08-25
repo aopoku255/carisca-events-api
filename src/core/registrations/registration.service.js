@@ -2,10 +2,13 @@ import { Op, QueryTypes } from 'sequelize';
 import { models, sequelize } from '../../database/models/index.js';
 import env from '../../config/env.js';
 import { registrationReference, randomHex } from '../../lib/ids.js';
-import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
+import {
+  AppError, ConflictError, NotFoundError, ValidationError,
+} from '../../lib/errors.js';
 import { notify } from '../notifications/notification.service.js';
 import { record as audit } from '../audit/audit.service.js';
 import { resolvePrice } from '../events/price-resolver.service.js';
+import { toMinor } from '../../lib/money.js';
 import { validateAnswers } from './answer-validator.js';
 import { logger } from '../../lib/logger.js';
 
@@ -318,6 +321,125 @@ export async function cancel(registrationId, { actor, reason = null, context = {
 }
 
 /**
+ * Reduces or zeroes what a registration owes — a sponsor covering someone's
+ * place, a hardship case, a speaker who should not pay to attend their own
+ * session.
+ *
+ * A waiver can only ever move the fee down towards zero and back up again as
+ * far as what was originally quoted; it is a discount on the real price, not
+ * a way to charge someone more than `resolvePrice()` ever calculated for
+ * them. `original_price_amount_minor` is the ceiling and is recorded once,
+ * on the first waiver, so a second adjustment still measures against what the
+ * participant actually agreed to at registration rather than the last edit.
+ *
+ * Waiving a registration fully free while it is still waiting on payment (or
+ * flagged for review) confirms it immediately — exactly what happens when an
+ * event is free from the start. Nobody should have to separately "approve"
+ * a registration whose entire reason for waiting just went away.
+ */
+export async function waive(registrationId, { actor, amount, reason = null, context = {} }) {
+  const registration = await Registration.findByPk(registrationId, {
+    include: [{ model: User, as: 'user' }, { model: Event, as: 'event' }],
+  });
+  if (!registration) throw new NotFoundError('Registration');
+
+  if (['CANCELLED', 'REFUNDED'].includes(registration.status)) {
+    throw new ConflictError('A cancelled or refunded registration has nothing to waive.', 'REGISTRATION_TERMINAL');
+  }
+  if (!registration.currency) {
+    throw new ConflictError('This registration was never priced, so there is nothing to waive.', 'NO_PRICE');
+  }
+
+  const before = Number(registration.price_amount_minor);
+  const ceiling = registration.original_price_amount_minor !== null
+    && registration.original_price_amount_minor !== undefined
+    ? Number(registration.original_price_amount_minor)
+    : before;
+
+  const newAmountMinor = toMinor(amount, registration.currency);
+
+  if (newAmountMinor < 0) {
+    throw new ValidationError([{ field: 'amount', message: 'A fee cannot be negative.' }]);
+  }
+  if (newAmountMinor > ceiling) {
+    throw new ValidationError([{
+      field: 'amount',
+      message: 'A waiver cannot set the fee above what the participant was originally quoted.',
+    }]);
+  }
+  if (newAmountMinor === before) {
+    throw new ConflictError('That is already the current fee.', 'NO_CHANGE');
+  }
+
+  const from = registration.status;
+  const becomesFree = newAmountMinor === 0;
+  // A partial reduction that still leaves something owing does not resolve
+  // whatever the registration was waiting on; only a full waiver does.
+  const shouldConfirm = becomesFree && ['PENDING_PAYMENT', 'REQUIRES_REVIEW'].includes(from);
+  const to = shouldConfirm ? 'CONFIRMED' : from;
+
+  await sequelize.transaction(async (transaction) => {
+    await registration.update({
+      price_amount_minor: newAmountMinor,
+      original_price_amount_minor: registration.original_price_amount_minor ?? before,
+      waiver_reason: reason,
+      waived_at: new Date(),
+      waived_by: actor.id,
+      status: to,
+      hold_expires_at: shouldConfirm ? null : registration.hold_expires_at,
+      confirmed_at: shouldConfirm ? new Date() : registration.confirmed_at,
+    }, { transaction });
+
+    if (to !== from) {
+      await recordStatus(registration, from, to, {
+        reason: reason ?? 'Fee waived in full', actorId: actor.id, transaction,
+      });
+    }
+
+    await audit({
+      actor,
+      action: 'registration.fee_waived',
+      resourceType: 'registration',
+      resourceId: registrationId,
+      before: { amountMinor: before, currency: registration.currency, status: from },
+      after: { amountMinor: newAmountMinor, currency: registration.currency, status: to },
+      metadata: { reason },
+      context,
+    }, { transaction });
+  });
+
+  // Outside the transaction, matching how a fresh registration is confirmed:
+  // an email that goes out for a change that then rolls back is worse than a
+  // participant who has to be told a second time.
+  if (shouldConfirm && registration.user) {
+    await notify({
+      userId: registration.user_id,
+      channel: 'EMAIL',
+      template: 'registration_confirmed',
+      toAddress: registration.user.email,
+      subject: `You're registered: ${registration.event?.title}`,
+      payload: {
+        firstName: registration.user.first_name,
+        eventTitle: registration.event?.title,
+        reference: registration.reference,
+        attendanceMode: registration.attendance_mode,
+      },
+      resourceType: 'registration',
+      resourceId: String(registration.id),
+    }).catch((err) => {
+      // A missed email must not undo a waiver that already took effect.
+      logger.error({ err: err.message, registrationId }, 'waiver confirmation email failed');
+    });
+  }
+
+  logger.info({
+    registrationId, actorId: actor.id, beforeMinor: before, afterMinor: newAmountMinor,
+  }, 'registration fee waived');
+
+  return registration;
+}
+
+/**
  * Moves waitlisted people into a freed seat, oldest first. Runs after any
  * cancellation or expiry rather than on a timer, so the offer goes out while
  * the participant still cares.
@@ -473,6 +595,6 @@ export async function findByReference(reference, { withQr = false } = {}) {
 }
 
 export default {
-  register, cancel, promoteFromWaitlist, sweepExpiredHolds,
+  register, cancel, waive, promoteFromWaitlist, sweepExpiredHolds,
   findForUser, findByReference,
 };

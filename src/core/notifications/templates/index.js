@@ -66,6 +66,26 @@ export const templates = {
     cta: { label: 'Confirm my email', url: p.verifyUrl },
   }),
 
+  /**
+   * Sent once, at creation, for an account an administrator set up directly —
+   * never queued through the ordinary outbox (see createUser() for why): the
+   * password only ever exists in this one outbound message, not in a table a
+   * later backup or breach could read back.
+   */
+  account_created: (p) => ({
+    subject: p.isStaff ? 'Your CARISCA staff account is ready' : 'Your CARISCA account is ready',
+    heading: `Welcome, ${escape(p.firstName)}`,
+    body: `<p>An administrator has set up ${p.isStaff ? 'a staff account for you on' : 'your account with'} CARISCA.</p>
+           <p><strong>Email:</strong> ${escape(p.email)}<br>
+              <strong>Password:</strong> ${escape(p.password)}</p>
+           <p style="color:${BRAND.slate};font-size:13px">Change this password from your profile once you have
+              signed in — nobody else should know it once you do.</p>`,
+    cta: {
+      label: p.isStaff ? 'Sign in to the console' : 'Sign in',
+      url: p.isStaff ? `${env.ADMIN_URL}/login` : `${env.WEB_URL}/login`,
+    },
+  }),
+
   password_reset: (p) => ({
     subject: 'Reset your CARISCA password',
     heading: 'Reset your password',

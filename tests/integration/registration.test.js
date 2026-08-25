@@ -480,6 +480,171 @@ describe('access to a registration', () => {
   });
 });
 
+describe('waiving a fee', () => {
+  const manager = () => makeUser({ roleKey: 'manager', isStaff: true });
+
+  test('reducing to free confirms a pending registration', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+    expect(created.body.data.registration.status).toBe('PENDING_PAYMENT');
+
+    const res = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '0', reason: 'Sponsored place' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('CONFIRMED');
+    expect(res.body.data.amount.amountMinor).toBe(0);
+    expect(res.body.data.originalAmount.amountMinor).toBe(5000);
+    expect(res.body.data.waiverReason).toBe('Sponsored place');
+    expect(res.body.data.waivedBy.name).toContain(staff.first_name);
+    expect(res.body.data.confirmedAt).toBeTruthy();
+
+    const history = await models.RegistrationStatusHistory.findAll({
+      where: { registration_id: created.body.data.registration.id },
+      order: [['id', 'ASC']],
+    });
+    expect(history.map((h) => h.to_status)).toEqual(['PENDING_PAYMENT', 'CONFIRMED']);
+  });
+
+  test('a partial reduction leaves it pending payment for the smaller amount', async () => {
+    const event = await makeEvent({ amountMinor: 10000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    const res = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '40.00' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('PENDING_PAYMENT');
+    expect(res.body.data.amount.formatted).toBe('40.00');
+    expect(res.body.data.originalAmount.formatted).toBe('100.00');
+  });
+
+  test('cannot set the fee above what was originally quoted', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    const res = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '9999.00' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.details[0].field).toBe('amount');
+  });
+
+  test('a second waiver still measures against the original amount, not the last edit', async () => {
+    const event = await makeEvent({ amountMinor: 10000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '40.00' });
+
+    // Restoring most of the way back up is allowed — up to the ORIGINAL
+    // 100.00, not the 40.00 it was most recently set to.
+    const restored = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '90.00' });
+
+    expect(restored.status).toBe(200);
+    expect(restored.body.data.amount.formatted).toBe('90.00');
+    expect(restored.body.data.originalAmount.formatted).toBe('100.00');
+
+    // But it can still never exceed that original ceiling.
+    const overshoot = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '150.00' });
+    expect(overshoot.status).toBe(422);
+  });
+
+  test('resubmitting the same amount is refused as a no-op', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    const res = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '50.00' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('NO_CHANGE');
+  });
+
+  test('a cancelled registration has nothing left to waive', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    await request(server).post(`/api/v1/registrations/${reference}/cancel`)
+      .set(authHeader(user)).send({});
+
+    const res = await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '0' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('REGISTRATION_TERMINAL');
+  });
+
+  test('staff without the permission cannot waive, and a participant cannot waive their own fee', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const itAdmin = await makeUser({ roleKey: 'it_admin', isStaff: true });
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    expect((await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(itAdmin)).send({ amount: '0' })).status).toBe(403);
+    expect((await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(user)).send({ amount: '0' })).status).toBe(403);
+  });
+
+  test('who granted the waiver is visible to staff but not to the participant themselves', async () => {
+    const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
+    const user = await participant();
+    const staff = await manager();
+
+    const created = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user)).send({ eventId: Number(event.id) });
+    const reference = created.body.data.registration.reference;
+
+    await request(server).post(`/api/v1/registrations/${reference}/waive`)
+      .set(authHeader(staff)).send({ amount: '0', reason: 'Hardship' });
+
+    const asOwner = await request(server).get(`/api/v1/registrations/${reference}`)
+      .set(authHeader(user));
+    expect(asOwner.body.data.waiverReason).toBe('Hardship');
+    expect(asOwner.body.data.waivedBy).toBeUndefined();
+
+    const asStaff = await request(server).get(`/api/v1/registrations/${reference}`)
+      .set(authHeader(staff));
+    expect(asStaff.body.data.waivedBy.name).toContain(staff.first_name);
+  });
+});
+
 describe('the notification outbox', () => {
   /** The dispatcher works in batches, so drain what earlier tests queued. */
   async function drainOutbox() {

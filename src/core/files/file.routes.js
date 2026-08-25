@@ -132,6 +132,22 @@ router.get('/:id',
           : 'no-store, private',
       );
 
+      /*
+       * A PUBLIC file exists to be embedded by the public website, which is a
+       * separate app on a separate origin — and, once the API is on its own
+       * domain rather than a subdomain, a separate site too. The app-wide
+       * same-site policy set in app.js blocks exactly that, so an event
+       * banner silently fails to load with ERR_BLOCKED_BY_RESPONSE.NotSameSite
+       * while every other request succeeds.
+       *
+       * Only PUBLIC files are opened up. Anything private keeps the stricter
+       * app-wide policy, so a certificate or a piece of registration evidence
+       * still cannot be embedded from somewhere else.
+       */
+      if (file.visibility === 'PUBLIC') {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      }
+
       stream.on('error', () => next(new NotFoundError('File')));
       return stream.pipe(res);
     } catch (err) {

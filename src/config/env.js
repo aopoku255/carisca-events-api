@@ -29,6 +29,9 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   API_URL: z.string().url().default('http://localhost:4000'),
   WEB_URL: z.string().url().default('http://localhost:3000'),
+  // Only used to link a new staff account to the right place to sign in —
+  // the public site and the console are different apps at different origins.
+  ADMIN_URL: z.string().url().default('http://localhost:3001'),
 
   // --- database -----------------------------------------------------------
   DB_HOST: z.string().default('127.0.0.1'),

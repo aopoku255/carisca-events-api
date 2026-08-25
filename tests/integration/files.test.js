@@ -150,6 +150,22 @@ describe('serving files', () => {
     expect(res.headers['cache-control']).toMatch(/no-store/);
   });
 
+  /*
+   * The public site is a different origin from the API, so the app-wide
+   * same-site resource policy would block an event banner from rendering
+   * there — the failure is silent in the browser and shows up only as a
+   * broken image, which is why it is pinned here.
+   */
+  test('a public file may be embedded cross-origin', async () => {
+    const res = await request(server).get(`/api/v1/files/${publicId}`);
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+  });
+
+  test('a private file may not', async () => {
+    const res = await request(server).get(`/api/v1/files/${privateId}`).set(authHeader(manager));
+    expect(res.headers['cross-origin-resource-policy']).not.toBe('cross-origin');
+  });
+
   test('an SVG is sent as a download, never rendered inline', async () => {
     const res = await upload(manager, SVG, 'logo.svg', 'organization_logo', 'image/svg+xml');
     expect(res.status).toBe(201);

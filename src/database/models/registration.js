@@ -72,6 +72,13 @@ export default function defineRegistration(sequelize) {
     currency: { type: DataTypes.CHAR(3) },
     price_tier: { type: DataTypes.STRING(48) },
 
+    // Set once, on the first waiver, and never touched again — see the
+    // migration for why. NULL means this registration has never been waived.
+    original_price_amount_minor: { type: DataTypes.BIGINT.UNSIGNED },
+    waiver_reason: { type: DataTypes.STRING(500) },
+    waived_at: { type: DataTypes.DATE(3) },
+    waived_by: { type: DataTypes.BIGINT.UNSIGNED },
+
     profile_snapshot: { type: DataTypes.JSON },
     special_requirements: { type: DataTypes.STRING(1000) },
     comments: { type: DataTypes.TEXT },

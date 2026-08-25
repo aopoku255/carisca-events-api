@@ -3,6 +3,7 @@ import { loadCurrencyExponents } from '../../src/lib/money.js';
 import { hashPassword } from '../../src/core/auth/auth.service.js';
 import { signAccessToken } from '../../src/core/auth/token.service.js';
 import { getRedis, closeRedis } from '../../src/config/redis.js';
+import { closeBrowser } from '../../src/core/certificates/browser.js';
 import { createApp } from '../../src/app.js';
 
 const { User, Role, Department } = models;
@@ -25,6 +26,10 @@ export async function prepareDatabase() {
 export async function teardown() {
   await sequelize.close().catch(() => {});
   await closeRedis().catch(() => {});
+  // A rendered certificate leaves a Chromium process running behind the
+  // module-level singleton. Without this Jest never exits, whether or not the
+  // file being torn down was the one that started it.
+  await closeBrowser().catch(() => {});
 }
 
 /** Permission caching would otherwise leak state between tests. */

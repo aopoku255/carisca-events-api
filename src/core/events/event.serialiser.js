@@ -98,6 +98,9 @@ function speakers(event) {
     organization: s.organization ?? null,
     bio: s.bio ?? null,
     role: s.role,
+    // Public: photos are marked PUBLIC at upload, same as an event banner, so
+    // the URL needs no auth.
+    photo: serialiseFile(s.photo),
   }));
 }
 
@@ -175,7 +178,9 @@ export function serialiseAdminEvent(event, { capacity = null } = {}) {
   };
 }
 
-export function serialiseRegistration(registration, { includeAnswers = false, includeQr = false } = {}) {
+export function serialiseRegistration(registration, {
+  includeAnswers = false, includeQr = false, includeWaiver = false,
+} = {}) {
   const out = {
     id: String(registration.id),
     reference: registration.reference,
@@ -186,6 +191,16 @@ export function serialiseRegistration(registration, { includeAnswers = false, in
       ? serialiseMoney(registration.price_amount_minor, registration.currency)
       : null,
     priceTier: registration.price_tier ?? null,
+    // Present only once a waiver has actually happened — null rather than
+    // duplicating `amount` on every ordinary registration that was never
+    // touched. originalAmount is what resolvePrice() first quoted, the
+    // ceiling a waiver can restore up to but never exceed.
+    originalAmount: (registration.original_price_amount_minor !== null
+      && registration.original_price_amount_minor !== undefined && registration.currency)
+      ? serialiseMoney(registration.original_price_amount_minor, registration.currency)
+      : null,
+    waiverReason: registration.waiver_reason ?? null,
+    waivedAt: registration.waived_at ?? null,
     wantsCertificate: registration.wants_certificate,
     isPreviousAttendee: registration.is_previous_attendee,
     mediaConsentGiven: !!registration.media_consent_at,
@@ -219,6 +234,13 @@ export function serialiseRegistration(registration, { includeAnswers = false, in
       email: registration.user.email,
       organization: registration.user.organization ?? null,
       countryCode: registration.user.country_code ?? null,
+    };
+  }
+
+  if (includeWaiver && registration.waivedByUser) {
+    out.waivedBy = {
+      id: String(registration.waivedByUser.id),
+      name: `${registration.waivedByUser.first_name} ${registration.waivedByUser.last_name}`.trim(),
     };
   }
 

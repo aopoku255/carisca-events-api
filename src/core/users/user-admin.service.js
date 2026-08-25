@@ -5,6 +5,8 @@ import { revokeAllForUser } from '../auth/token.service.js';
 import { invalidateUser } from '../rbac/rbac.service.js';
 import { record as audit } from '../audit/audit.service.js';
 import { serialiseUser } from './user.serialiser.js';
+import { sendMail } from '../notifications/channels/mail.js';
+import { render } from '../notifications/templates/index.js';
 import { logger } from '../../lib/logger.js';
 
 const { User, Role, Department } = models;
@@ -73,9 +75,19 @@ async function resolveDepartment(departmentId, transaction = null) {
  * Creates an account on an administrator's behalf.
  *
  * The initial password is set here rather than emailed as an invitation link:
- * there is no set-password page in either frontend yet, so an invite would send
- * people to a 404. The administrator hands the password over out of band and
- * the recipient changes it from their profile.
+ * there is no set-password page in either frontend yet, so an invite-by-link
+ * would send people to a 404. Instead the password the admin typed is emailed
+ * directly to the new account — not through notify()'s queue, which persists
+ * its payload in the notifications table indefinitely. A password has no
+ * business sitting in a database column once it has been delivered, so this
+ * sends it straight through the mail channel and keeps no record of the value
+ * anywhere but the (already-hashed) users table and the outbound message
+ * itself.
+ *
+ * Email delivery failing must never fail the account creation it is
+ * reporting on — the admin still has the password they just typed and can
+ * pass it on directly, exactly as before this existed. The caller is told
+ * whether it actually sent, so the confirmation screen can say which.
  */
 export async function createUser(input, { actor, context = {} } = {}) {
   const email = String(input.email).trim().toLowerCase();
@@ -134,8 +146,24 @@ export async function createUser(input, { actor, context = {} } = {}) {
 
   logger.info({ userId: user.id, actorId: actor?.id }, 'user created by administrator');
 
+  let welcomeEmailSent = false;
+  try {
+    const { subject, html, text } = render('account_created', {
+      firstName: user.first_name,
+      email: user.email,
+      password: input.password,
+      isStaff,
+    });
+    await sendMail({ to: user.email, subject, html, text });
+    welcomeEmailSent = true;
+  } catch (err) {
+    // Never lets a bounced or misconfigured mailbox undo an account that
+    // otherwise created cleanly — the admin already has the password.
+    logger.error({ err: err.message, userId: user.id }, 'welcome email failed to send');
+  }
+
   await user.reload({ include: WITH_REFS });
-  return user;
+  return { user, welcomeEmailSent };
 }
 
 /**

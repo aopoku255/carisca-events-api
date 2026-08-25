@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { models } from '../../database/models/index.js';
 import * as registrationService from './registration.service.js';
 import * as eventService from '../events/event.service.js';
+import { generateCertificate, certificateEligibility } from '../certificates/certificate.service.js';
 import { resolvePrice } from '../events/price-resolver.service.js';
 import { serialiseRegistration } from '../events/event.serialiser.js';
 import { ok, created, paginated } from '../../lib/response.js';
@@ -16,7 +17,9 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors.js';
 import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
 import { record as audit } from '../audit/audit.service.js';
 
-const { Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion } = models;
+const {
+  Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail,
+} = models;
 
 const router = Router();
 
@@ -242,8 +245,9 @@ async function loadOwnedRegistration(req, res, next) {
     const registration = await Registration.findOne({
       where: { reference: req.params.reference },
       include: [
-        { model: Event, as: 'event' },
+        { model: Event, as: 'event', include: [{ model: CpdEventDetail, as: 'cpd' }] },
         { model: User, as: 'user' },
+        { model: User, as: 'waivedByUser' },
         {
           model: RegistrationAnswer,
           as: 'answers',
@@ -253,7 +257,8 @@ async function loadOwnedRegistration(req, res, next) {
     });
     if (!registration) throw new NotFoundError('Registration');
 
-    if (String(registration.user_id) !== String(req.user.id)) {
+    const isOwner = String(registration.user_id) === String(req.user.id);
+    if (!isOwner) {
       const permissions = req.permissions || await import('../rbac/rbac.service.js')
         .then((m) => m.getPermissions(req.user.id));
       if (!permissions.has('cpd.registration.view')) {
@@ -261,6 +266,10 @@ async function loadOwnedRegistration(req, res, next) {
       }
     }
 
+    // Which staff member granted a waiver is an internal detail — visible to
+    // the staff who share this permission, not to the participant looking at
+    // their own record, even though the reason and the amount itself are.
+    req.viewerIsStaff = !isOwner;
     req.registration = registration;
     return next();
   } catch (err) {
@@ -274,7 +283,41 @@ router.get('/:reference',
   loadOwnedRegistration,
   async (req, res, next) => {
     try {
-      return ok(res, serialiseRegistration(req.registration, { includeAnswers: true }));
+      const data = serialiseRegistration(req.registration, {
+        includeAnswers: true, includeWaiver: req.viewerIsStaff,
+      });
+      data.certificate = certificateEligibility(req.registration);
+      return ok(res, data);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * The certificate itself, rendered on demand rather than generated and
+ * stored ahead of time — nothing here changes between requests except the
+ * registration's own eligibility, so there is no cache to keep correct.
+ */
+router.get('/:reference/certificate',
+  authenticate,
+  validate({
+    params: z.object({ reference: z.string().trim().min(1).max(48) }),
+    query: z.object({ format: z.enum(['pdf', 'png']).default('pdf') }),
+  }),
+  loadOwnedRegistration,
+  async (req, res, next) => {
+    try {
+      const { buffer, contentType, filename } = await generateCertificate(
+        req.registration,
+        { format: req.validatedQuery.format },
+      );
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', buffer.length);
+      // end(), not send(): Express appends "; charset=utf-8" to a
+      // Content-Type it set through send(), which is meaningless on a PDF or
+      // a PNG and confuses some clients about how to decode the body.
+      return res.end(buffer);
     } catch (err) {
       return next(err);
     }
@@ -324,6 +367,48 @@ router.post('/:reference/cancel',
         context: contextOf(req),
       });
       return ok(res, null, 'Registration cancelled.');
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * Reduces or zeroes what a registration owes. Deliberately not behind
+ * `loadOwnedRegistration` — a participant can cancel their own place, but
+ * waiving a fee is an administrative act regardless of whose registration it
+ * is, so it is gated purely on `cpd.registration.update` ("amend a
+ * registration") rather than ownership.
+ */
+router.post('/:reference/waive',
+  authenticate,
+  loadPermissions,
+  requirePermission('cpd.registration.update'),
+  validate({
+    params: z.object({ reference: z.string().trim().min(1).max(48) }),
+    body: z.object({
+      // A decimal string, same convention as the fee editor — "0" or "0.00"
+      // waives it in full, anything else in between reduces it.
+      amount: z.string().trim().max(20).regex(/^\d+(\.\d+)?$/, 'Enter an amount such as 0.00'),
+      reason: z.string().trim().max(500).optional(),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const registration = await Registration.findOne({ where: { reference: req.params.reference } });
+      if (!registration) throw new NotFoundError('Registration');
+
+      await registrationService.waive(registration.id, {
+        actor: { id: req.user.id, email: req.user.email },
+        amount: req.body.amount,
+        reason: req.body.reason,
+        context: contextOf(req),
+      });
+
+      const full = await Registration.findOne({
+        where: { reference: req.params.reference },
+        include: [{ model: Event, as: 'event' }, { model: User, as: 'waivedByUser' }],
+      });
+      return ok(res, serialiseRegistration(full, { includeWaiver: true }), 'Fee updated.');
     } catch (err) {
       return next(err);
     }

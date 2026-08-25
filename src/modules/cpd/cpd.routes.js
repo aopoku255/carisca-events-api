@@ -480,6 +480,7 @@ router.put('/events/:id/speakers',
             organization: s.organization,
             bio: s.bio,
             role: s.role,
+            photo_file_id: s.photoFileId ?? null,
             sort_order: s.sortOrder || (i + 1) * 10,
           })), { transaction });
         }
