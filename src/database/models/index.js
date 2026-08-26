@@ -9,6 +9,9 @@ import defineSystem from './system.js';
 import defineEvent from './event.js';
 import defineRegistration from './registration.js';
 import definePartner from './partner.js';
+import defineTrack from './track.js';
+import defineAbstract from './abstract.js';
+import defineCertificate from './certificate.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -17,8 +20,8 @@ export const sequelize = new Sequelize(config[env.NODE_ENV]);
  * so the association graph is written down in one readable place instead of
  * being scattered across thirty files.
  *
- * Event, registration, payment, attendance and certificate models are added
- * here as their modules are built.
+ * Event, registration, payment and attendance models are added here as
+ * their modules are built.
  */
 const registry = {};
 Object.assign(registry, defineReference(sequelize));
@@ -27,16 +30,20 @@ Object.assign(registry, defineSystem(sequelize));
 Object.assign(registry, defineEvent(sequelize));
 Object.assign(registry, defineRegistration(sequelize));
 Object.assign(registry, definePartner(sequelize));
+Object.assign(registry, defineTrack(sequelize));
+Object.assign(registry, defineAbstract(sequelize));
+Object.assign(registry, defineCertificate(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
   Country, Currency, Position, Sector,
   Department, User, Role, Permission, RefreshToken, UserToken, UserRole, RolePermission,
   AuditLog, File, SystemSetting,
-  EventType, Event, EventPrice, CpdEventDetail,
+  EventType, Event, EventPrice, CpdEventDetail, SummitEventDetail,
   EventSession, EventSpeaker, RegistrationQuestion,
   Registration, RegistrationAnswer, RegistrationStatusHistory, AttendanceRecord,
-  Partner, EventPartner,
+  Partner, EventPartner, EventTrack, EventSponsorshipTier, AbstractSubmission,
+  Certificate,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -79,9 +86,18 @@ EventPrice.belongsTo(Currency, { foreignKey: 'currency', as: 'currencyRef' });
 Event.belongsTo(File, { foreignKey: 'banner_file_id', as: 'banner' });
 Event.hasOne(CpdEventDetail, { foreignKey: 'event_id', as: 'cpd' });
 CpdEventDetail.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+Event.hasOne(SummitEventDetail, { foreignKey: 'event_id', as: 'summit' });
+SummitEventDetail.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+
+Event.hasMany(EventTrack, { foreignKey: 'event_id', as: 'tracks' });
+EventTrack.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+Event.hasMany(EventSponsorshipTier, { foreignKey: 'event_id', as: 'sponsorshipTiers' });
+EventSponsorshipTier.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 
 Event.hasMany(EventSession, { foreignKey: 'event_id', as: 'sessions' });
 EventSession.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+EventSession.belongsTo(EventTrack, { foreignKey: 'track_id', as: 'track' });
+EventTrack.hasMany(EventSession, { foreignKey: 'track_id', as: 'sessions' });
 Event.hasMany(EventSpeaker, { foreignKey: 'event_id', as: 'speakers' });
 EventSpeaker.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 EventSpeaker.belongsTo(File, { foreignKey: 'photo_file_id', as: 'photo' });
@@ -131,6 +147,32 @@ Partner.belongsToMany(Event, {
 });
 EventPartner.belongsTo(Partner, { foreignKey: 'partner_id', as: 'partner' });
 EventPartner.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+EventPartner.belongsTo(EventSponsorshipTier, { foreignKey: 'sponsorship_tier_id', as: 'sponsorshipTier' });
+EventSponsorshipTier.hasMany(EventPartner, { foreignKey: 'sponsorship_tier_id', as: 'sponsors' });
+
+/**
+ * A submission belongs to the event and to its author by ownership — the
+ * same shape `Registration` uses, which is what lets a participant read and
+ * edit their own submissions without holding any permission at all.
+ */
+Event.hasMany(AbstractSubmission, { foreignKey: 'event_id', as: 'abstracts' });
+AbstractSubmission.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+User.hasMany(AbstractSubmission, { foreignKey: 'user_id', as: 'abstracts' });
+AbstractSubmission.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
+AbstractSubmission.belongsTo(EventTrack, { foreignKey: 'track_id', as: 'track' });
+AbstractSubmission.belongsTo(File, { foreignKey: 'paper_file_id', as: 'paper' });
+AbstractSubmission.belongsTo(User, { foreignKey: 'decided_by', as: 'decidedBy' });
+
+/**
+ * One certificate per registration — same ownership shape as attendance,
+ * reached the same way (through `registrations`, never through a module's
+ * own table).
+ */
+Registration.hasOne(Certificate, { foreignKey: 'registration_id', as: 'certificate' });
+Certificate.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
+Certificate.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+Certificate.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Certificate.belongsTo(User, { foreignKey: 'revoked_by', as: 'revokedBy' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });

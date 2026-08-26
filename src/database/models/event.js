@@ -128,5 +128,15 @@ export default function defineEvent(sequelize) {
     requirements: { type: DataTypes.TEXT },
   }, { tableName: 'cpd_event_details', timestamps: true, underscored: true });
 
-  return { EventType, Event, EventPrice, CpdEventDetail };
+  const SummitEventDetail = sequelize.define('SummitEventDetail', {
+    event_id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true },
+    theme: { type: DataTypes.STRING(255) },
+    call_for_papers_opens_at: { type: DataTypes.DATE(3) },
+    call_for_papers_closes_at: { type: DataTypes.DATE(3) },
+    keynote_count: { type: DataTypes.TINYINT.UNSIGNED },
+  }, { tableName: 'summit_event_details', timestamps: true, underscored: true });
+
+  return {
+    EventType, Event, EventPrice, CpdEventDetail, SummitEventDetail,
+  };
 }

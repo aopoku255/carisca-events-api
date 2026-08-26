@@ -61,20 +61,44 @@ ENV NODE_ENV=production \
     PORT=4000 \
     # Local storage lives on a volume; ./storage inside the image would be lost
     # on every redeploy.
-    STORAGE_LOCAL_PATH=/data/storage
+    STORAGE_LOCAL_PATH=/data/storage \
+    # Puppeteer resolves its Chrome download against this path both when
+    # `npx puppeteer browsers install` runs below (as root, building the
+    # image) and at request time (as the `node` user, serving traffic) — one
+    # path under something both own means the binary the installer wrote is
+    # the one certificate generation actually finds.
+    PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
+
+# Headless Chrome itself, plus the shared libraries it links against at
+# runtime — node:22-bookworm-slim ships almost nothing beyond Node, so without
+# these certificate generation fails with "Could not find Chrome" (no binary)
+# or a launch crash (binary present, missing libs).
+#
+# Deliberately placed before `COPY src` below: this layer only needs
+# node_modules, and keying it off that instead means an ordinary source
+# change doesn't invalidate the cache and force a multi-minute Chrome
+# re-download on every rebuild.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 \
+       libatk1.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 \
+       libnspr4 libnss3 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 \
+       libxrandr2 libxss1 xdg-utils unzip \
+  && rm -rf /var/lib/apt/lists/* \
+  && npx puppeteer browsers install chrome \
+  && mkdir -p /data/storage && chown -R node:node /data /app
+
 COPY src ./src
 COPY scripts ./scripts
 COPY worker.js ./
 
 # The `node` user ships with the image. Running as root would mean an upload
 # path bug is a root-owned file on a shared volume.
-RUN mkdir -p /data/storage && chown -R node:node /data /app
-
 USER node
 
 EXPOSE 4000

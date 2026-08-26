@@ -46,6 +46,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "puppeteer": "^25.8.0",
+    "qrcode": "^1.5.4",
     "rate-limit-redis": "^4.2.0",
     "sequelize": "^6.37.5",
     "ulid": "^2.3.0",

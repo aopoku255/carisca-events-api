@@ -74,7 +74,7 @@ describe('the two separations the brief demanded', () => {
   test('event staff can mark attendance but cannot export participants', async () => {
     const perms = await loadPermissionsFromDb((await makeUser({ roleKey: 'event_staff', isStaff: true })).id);
     expect(perms).toContain('attendance.mark');
-    expect(perms).not.toContain('cpd.registration.export');
+    expect(perms).not.toContain('registration.export');
     expect(perms).not.toContain('payment.view');
   });
 
@@ -87,6 +87,35 @@ describe('the two separations the brief demanded', () => {
     expect(director).toContain('cpd.publish');
     expect(director).toContain('cpd.approve');
     expect(director).not.toContain('cpd.create');
+  });
+
+  test('Summit mirrors the same publish split as CPD, on its own permission keys', async () => {
+    const manager = await loadPermissionsFromDb((await makeUser({ roleKey: 'manager', isStaff: true })).id);
+    const director = await loadPermissionsFromDb((await makeUser({ roleKey: 'director', isStaff: true })).id);
+
+    expect(manager).toContain('summit.create');
+    expect(manager).not.toContain('summit.publish');
+    expect(director).toContain('summit.publish');
+    expect(director).not.toContain('summit.create');
+  });
+
+  test('registration.* is a shared key, not module-scoped — every role that could see CPD registrations can see Summit ones too', async () => {
+    const eventStaff = await loadPermissionsFromDb((await makeUser({ roleKey: 'event_staff', isStaff: true })).id);
+    expect(eventStaff).toContain('registration.view');
+    // A single generic key covers both modules — there is no
+    // summit.registration.view to separately grant or forget.
+    expect(eventStaff.filter((p) => p.includes('registration'))).toEqual(['registration.view']);
+  });
+
+  test('abstract review authority is layered: view is broad, deciding is not', async () => {
+    const monitoringEvaluation = await loadPermissionsFromDb(
+      (await makeUser({ roleKey: 'monitoring_evaluation', isStaff: true })).id,
+    );
+    const manager = await loadPermissionsFromDb((await makeUser({ roleKey: 'manager', isStaff: true })).id);
+
+    expect(monitoringEvaluation).toContain('abstract.view');
+    expect(monitoringEvaluation).not.toContain('abstract.decide');
+    expect(manager).toContain('abstract.decide');
   });
 });
 

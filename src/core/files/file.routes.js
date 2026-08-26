@@ -91,7 +91,7 @@ async function mayRead(file, req) {
   }
 
   const permissions = req.permissions ?? new Set();
-  return permissions.has('files.manage') || permissions.has('cpd.registration.view');
+  return permissions.has('files.manage') || permissions.has('registration.view');
 }
 
 router.get('/:id',

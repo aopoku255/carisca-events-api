@@ -11,7 +11,8 @@ import {
 
 const {
   Event, EventType, EventPrice, EventSession, EventSpeaker,
-  RegistrationQuestion, Registration, CpdEventDetail, Country,
+  RegistrationQuestion, Registration, CpdEventDetail, SummitEventDetail,
+  EventTrack, EventSponsorshipTier, Country,
 } = models;
 
 /**
@@ -22,7 +23,13 @@ const {
 export const DETAIL_INCLUDE = [
   { model: EventType, as: 'type' },
   { model: EventPrice, as: 'prices' },
-  { model: EventSession, as: 'sessions', separate: true, order: [['sort_order', 'ASC'], ['start_at', 'ASC']] },
+  {
+    model: EventSession,
+    as: 'sessions',
+    separate: true,
+    order: [['sort_order', 'ASC'], ['start_at', 'ASC']],
+    include: [{ model: EventTrack, as: 'track' }],
+  },
   {
     model: EventSpeaker,
     as: 'speakers',
@@ -32,12 +39,15 @@ export const DETAIL_INCLUDE = [
   },
   { model: RegistrationQuestion, as: 'questions', separate: true, order: [['sort_order', 'ASC']] },
   { model: CpdEventDetail, as: 'cpd' },
+  { model: SummitEventDetail, as: 'summit' },
+  { model: EventTrack, as: 'tracks', separate: true, order: [['sort_order', 'ASC']] },
+  { model: EventSponsorshipTier, as: 'sponsorshipTiers', separate: true, order: [['sort_order', 'ASC']] },
   { model: Country, as: 'country' },
   { model: models.File, as: 'banner' },
   {
     model: models.Partner,
     as: 'partners',
-    through: { attributes: ['role', 'sort_order'] },
+    through: { attributes: ['role', 'sort_order', 'sponsorship_tier_id'] },
     include: [{ model: models.File, as: 'logo' }],
   },
 ];
@@ -87,6 +97,9 @@ export async function create(input, { actor, moduleKey, context = {} }) {
     if (input.cpd && moduleKey === 'cpd') {
       await CpdEventDetail.create({ event_id: created.id, ...input.cpd }, { transaction });
     }
+    if (input.summit && moduleKey === 'summit') {
+      await SummitEventDetail.create({ event_id: created.id, ...input.summit }, { transaction });
+    }
 
     await audit({
       actor,
@@ -121,6 +134,12 @@ export async function update(id, input, { actor, context = {} }) {
         where: { event_id: id }, defaults: { event_id: id }, transaction,
       });
       await detail.update(input.cpd, { transaction });
+    }
+    if (input.summit) {
+      const [detail] = await SummitEventDetail.findOrCreate({
+        where: { event_id: id }, defaults: { event_id: id }, transaction,
+      });
+      await detail.update(input.summit, { transaction });
     }
 
     await audit({

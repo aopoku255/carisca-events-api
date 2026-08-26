@@ -11,6 +11,9 @@ export default function defineRegistration(sequelize) {
     location: { type: DataTypes.STRING(255) },
     is_required_for_attendance: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     sort_order: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+    // Which parallel stream this session belongs to. Nullable and unused by
+    // CPD, whose agenda is one linear list — set only on a Summit session.
+    track_id: { type: DataTypes.BIGINT.UNSIGNED },
   }, { tableName: 'event_sessions', timestamps: true, paranoid: true, underscored: true });
 
   const EventSpeaker = sequelize.define('EventSpeaker', {

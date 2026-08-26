@@ -46,6 +46,8 @@ function partners(event) {
       websiteUrl: p.website_url ?? null,
       logo: serialiseFile(p.logo),
       role: p.EventPartner?.role ?? 'PARTNER',
+      sponsorshipTierId: p.EventPartner?.sponsorship_tier_id
+        ? String(p.EventPartner.sponsorship_tier_id) : null,
     }));
 }
 
@@ -86,6 +88,32 @@ function sessions(event) {
     endAt: s.end_at,
     location: s.location ?? null,
     requiredForAttendance: !!s.is_required_for_attendance,
+    // Absent on every CPD session, whose agenda is one linear list — set
+    // only when a Summit session has been assigned to a parallel track.
+    trackId: s.track_id ? String(s.track_id) : null,
+  }));
+}
+
+function tracks(event) {
+  if (!event.tracks) return undefined;
+  return event.tracks.map((t) => ({
+    id: String(t.id),
+    name: t.name,
+    description: t.description ?? null,
+    color: t.color ?? null,
+    sortOrder: t.sort_order,
+  }));
+}
+
+function sponsorshipTiers(event) {
+  if (!event.sponsorshipTiers) return undefined;
+  return event.sponsorshipTiers.map((t) => ({
+    id: String(t.id),
+    name: t.name,
+    benefits: t.benefits ?? null,
+    money: t.price_amount_minor && t.currency
+      ? serialiseMoney(t.price_amount_minor, t.currency) : null,
+    sortOrder: t.sort_order,
   }));
 }
 
@@ -115,6 +143,16 @@ function cpd(event) {
   };
 }
 
+function summit(event) {
+  if (!event.summit) return undefined;
+  return {
+    theme: event.summit.theme ?? null,
+    callForPapersOpensAt: event.summit.call_for_papers_opens_at ?? null,
+    callForPapersClosesAt: event.summit.call_for_papers_closes_at ?? null,
+    keynoteCount: event.summit.keynote_count ?? null,
+  };
+}
+
 /** For the public site and the participant portal. */
 export function serialisePublicEvent(event, { capacity = null } = {}) {
   return {
@@ -132,6 +170,9 @@ export function serialisePublicEvent(event, { capacity = null } = {}) {
     sessions: sessions(event),
     speakers: speakers(event),
     cpd: cpd(event),
+    summit: summit(event),
+    tracks: tracks(event),
+    sponsorshipTiers: sponsorshipTiers(event),
     // Whether places remain, not the exact headcount.
     availability: capacity ? {
       inPerson: capacity.inPerson ? { isFull: capacity.inPerson.isFull } : null,
@@ -174,6 +215,9 @@ export function serialiseAdminEvent(event, { capacity = null } = {}) {
     sessions: sessions(event),
     speakers: speakers(event),
     cpd: cpd(event),
+    summit: summit(event),
+    tracks: tracks(event),
+    sponsorshipTiers: sponsorshipTiers(event),
     occupancy: capacity ?? undefined,
   };
 }

@@ -15,7 +15,7 @@ module.exports = {
 
     await queryInterface.bulkInsert('event_types', [
       { key: 'cpd', name: 'Continuing Professional Development', module: 'cpd', description: 'CPD programmes and short courses', is_active: true, created_at: ts, updated_at: ts },
-      { key: 'summit', name: 'CARISCA Summit', module: 'summit', description: 'Annual supply chain research summit', is_active: false, created_at: ts, updated_at: ts },
+      { key: 'summit', name: 'CARISCA Summit', module: 'summit', description: 'Annual supply chain research summit', is_active: true, created_at: ts, updated_at: ts },
       { key: 'business_forum', name: 'Business Forum', module: 'business-forum', description: 'Industry and business forum events', is_active: false, created_at: ts, updated_at: ts },
     ], { updateOnDuplicate: ['name', 'module', 'description', 'updated_at'] });
 

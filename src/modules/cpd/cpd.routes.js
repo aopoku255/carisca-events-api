@@ -107,7 +107,7 @@ router.get('/events/:id',
  * grouping happens in MySQL rather than by loading every registration.
  */
 router.get('/events/:id/summary',
-  requirePermission('cpd.registration.view'),
+  requirePermission('registration.view'),
   validate({ params: schema.idParam }),
   loadCpdEvent,
   async (req, res, next) => {
@@ -188,7 +188,7 @@ router.get('/events/:id/summary',
  * question count is capped at 60, so the working set stays small.
  */
 router.get('/events/:id/responses',
-  requirePermission('cpd.registration.view'),
+  requirePermission('registration.view'),
   validate({ params: schema.idParam }),
   loadCpdEvent,
   async (req, res, next) => {

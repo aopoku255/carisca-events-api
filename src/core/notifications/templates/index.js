@@ -105,6 +105,18 @@ export const templates = {
     cta: { label: 'View my registration', url: `${env.WEB_URL}/dashboard/registrations` },
   }),
 
+  abstract_decided: (p) => ({
+    subject: p.accepted
+      ? `Accepted: your abstract for ${p.eventTitle}`
+      : `About your submission to ${p.eventTitle}`,
+    heading: p.accepted ? 'Your abstract has been accepted' : 'Update on your submission',
+    body: `<p>Hello ${escape(p.firstName)}, a decision has been made on your submission
+           <strong>${escape(p.title)}</strong> for <strong>${escape(p.eventTitle)}</strong>.</p>
+           <p><strong>Decision:</strong> ${p.accepted ? 'Accepted' : 'Not accepted'}</p>
+           ${p.notes ? `<p>${escape(p.notes)}</p>` : ''}`,
+    cta: { label: 'View my submission', url: `${env.WEB_URL}/dashboard/abstracts` },
+  }),
+
   registration_pending_payment: (p) => ({
     subject: `Complete your registration: ${p.eventTitle}`,
     heading: 'One step left',

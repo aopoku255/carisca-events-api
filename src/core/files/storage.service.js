@@ -68,6 +68,11 @@ export const PURPOSES = {
     maxBytes: 10 * 1024 * 1024,
     visibility: 'PRIVATE',
   },
+  abstract_paper: {
+    mimes: ['application/pdf'],
+    maxBytes: 15 * 1024 * 1024,
+    visibility: 'PRIVATE',
+  },
 };
 
 /**

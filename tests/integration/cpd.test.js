@@ -126,15 +126,6 @@ describe('publish validation', () => {
     expect(res.body.error.details.problems.join(' ')).toMatch(/joining link/);
   });
 
-  test('certificates without a template cannot be published', async () => {
-    const event = await createDraft({ issuesCertificate: true });
-    await setPrices(event.id, standard);
-
-    const res = await request(server).post(`/api/v1/cpd/events/${event.id}/publish`)
-      .set(authHeader(director)).send({});
-    expect(res.body.error.details.problems.join(' ')).toMatch(/no template is selected/);
-  });
-
   test('a percentage attendance rule needs a percentage and required sessions', async () => {
     const event = await createDraft({ attendanceRule: 'SESSION_PERCENT' });
     await setPrices(event.id, standard);

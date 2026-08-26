@@ -13,7 +13,7 @@ import { validateAnswers } from './answer-validator.js';
 import { logger } from '../../lib/logger.js';
 
 const {
-  Event, Registration, RegistrationAnswer, RegistrationQuestion,
+  Event, EventType, Registration, RegistrationAnswer, RegistrationQuestion,
   RegistrationStatusHistory, User, Country,
 } = models;
 
@@ -217,9 +217,15 @@ export async function register({
       registration = existing;
       await RegistrationAnswer.destroy({ where: { registration_id: existing.id }, transaction });
     } else {
+      // The reference is read back by every module (CPD, Summit, and
+      // whatever comes after) — deriving its prefix from the event's own
+      // type key, rather than hardcoding which numeric id means what, is
+      // what makes a new module's registrations look like its own rather
+      // than a generic "EVT-...".
+      const type = await EventType.findByPk(event.event_type_id, { transaction });
       registration = await Registration.create({
         ...payload,
-        reference: registrationReference(event.event_type_id === 1 ? 'CPD' : 'EVT'),
+        reference: registrationReference(type?.key ?? 'evt'),
         qr_token: randomHex(32),
       }, { transaction });
     }

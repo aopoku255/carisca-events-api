@@ -34,6 +34,9 @@ export default function definePartner(sequelize) {
       defaultValue: 'PARTNER',
     },
     sort_order: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+    // Set only when role is SPONSOR and the event has sponsorship tiers —
+    // an ordinary sponsor with no tier is still perfectly valid.
+    sponsorship_tier_id: { type: DataTypes.BIGINT.UNSIGNED },
   }, {
     tableName: 'event_partners',
     timestamps: true,

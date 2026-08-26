@@ -6,7 +6,9 @@ import {
 
 jest.setTimeout(120_000);
 
-const { Event, EventType, EventPrice } = models;
+const {
+  Event, EventType, EventPrice, Certificate, Registration,
+} = models;
 
 let server;
 let cpdType;
@@ -153,5 +155,78 @@ describe('downloading a certificate', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('CERTIFICATE_OPTED_OUT');
+  });
+});
+
+describe('verifying a certificate', () => {
+  test('downloading one issues a verification code that the public endpoint confirms', async () => {
+    const event = await makeEvent();
+    const user = await participant();
+    const reference = await confirmedRegistration({ event, user });
+
+    const download = await request(server)
+      .get(`/api/v1/registrations/${reference}/certificate`)
+      .set(authHeader(user));
+    expect(download.status).toBe(200);
+
+    const registration = await Registration.findOne({ where: { reference } });
+    const certificate = await Certificate.findOne({ where: { registration_id: registration.id } });
+    expect(certificate.verification_code).toMatch(/^CARISCA-CPD-\d{4}-\d{6}-[A-Z0-9]{4}$/);
+
+    // The public endpoint needs no session — it's reached from the QR code
+    // printed on the certificate, by whoever is holding it.
+    const verify = await request(server)
+      .get(`/api/v1/certificates/verify/${certificate.verification_code}`);
+
+    expect(verify.status).toBe(200);
+    expect(verify.body.data).toMatchObject({
+      valid: true,
+      status: 'ISSUED',
+      eventTitle: event.title,
+      venue: event.venue,
+    });
+    expect(verify.body.data.participantName).toContain(user.first_name);
+  });
+
+  test('a second download reuses the same code rather than minting a new one', async () => {
+    const event = await makeEvent();
+    const user = await participant();
+    const reference = await confirmedRegistration({ event, user });
+
+    await request(server).get(`/api/v1/registrations/${reference}/certificate`).set(authHeader(user));
+    await request(server).get(`/api/v1/registrations/${reference}/certificate`)
+      .query({ format: 'png' }).set(authHeader(user));
+
+    const registration = await Registration.findOne({ where: { reference } });
+    const count = await Certificate.count({ where: { registration_id: registration.id } });
+    expect(count).toBe(1);
+
+    const certificate = await Certificate.findOne({ where: { registration_id: registration.id } });
+    expect(certificate.download_count).toBe(2);
+  });
+
+  test('an unknown code is not found, not an error about who is asking', async () => {
+    const res = await request(server).get('/api/v1/certificates/verify/NOT-A-REAL-CODE');
+    expect(res.status).toBe(404);
+  });
+
+  test('a revoked certificate reports as invalid, with the reason', async () => {
+    const event = await makeEvent();
+    const user = await participant();
+    const reference = await confirmedRegistration({ event, user });
+
+    await request(server).get(`/api/v1/registrations/${reference}/certificate`).set(authHeader(user));
+    const registration = await Registration.findOne({ where: { reference } });
+    const certificate = await Certificate.findOne({ where: { registration_id: registration.id } });
+    await certificate.update({
+      status: 'REVOKED', revoked_at: new Date(), revoked_reason: 'Issued in error',
+    });
+
+    const verify = await request(server)
+      .get(`/api/v1/certificates/verify/${certificate.verification_code}`);
+
+    expect(verify.body.data.valid).toBe(false);
+    expect(verify.body.data.status).toBe('REVOKED');
+    expect(verify.body.data.revokedReason).toBe('Issued in error');
   });
 });

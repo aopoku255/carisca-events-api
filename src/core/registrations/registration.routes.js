@@ -131,7 +131,11 @@ router.get('/mine',
       const registrations = await registrationService.findForUser(req.user.id, {
         status: req.validatedQuery.status,
       });
-      return ok(res, registrations.map((r) => serialiseRegistration(r)));
+      return ok(res, registrations.map((r) => {
+        const data = serialiseRegistration(r);
+        data.certificate = certificateEligibility(r);
+        return data;
+      }));
     } catch (err) {
       return next(err);
     }
@@ -148,7 +152,7 @@ router.get('/mine',
 router.get('/export',
   authenticate,
   loadPermissions,
-  requirePermission('cpd.registration.export'),
+  requirePermission('registration.export'),
   validate({
     query: z.object({
       eventId: z.coerce.number().int().positive(),
@@ -237,7 +241,7 @@ router.get('/export',
 
 /**
  * Ownership is checked here rather than by a permission. No permission grants
- * a way past it: a staff member needs cpd.registration.view to see someone
+ * a way past it: a staff member needs registration.view to see someone
  * else's registration, and being staff alone is not enough.
  */
 async function loadOwnedRegistration(req, res, next) {
@@ -261,7 +265,7 @@ async function loadOwnedRegistration(req, res, next) {
     if (!isOwner) {
       const permissions = req.permissions || await import('../rbac/rbac.service.js')
         .then((m) => m.getPermissions(req.user.id));
-      if (!permissions.has('cpd.registration.view')) {
+      if (!permissions.has('registration.view')) {
         throw new AuthorizationError('You do not have access to this registration.');
       }
     }
@@ -376,13 +380,13 @@ router.post('/:reference/cancel',
  * Reduces or zeroes what a registration owes. Deliberately not behind
  * `loadOwnedRegistration` — a participant can cancel their own place, but
  * waiving a fee is an administrative act regardless of whose registration it
- * is, so it is gated purely on `cpd.registration.update` ("amend a
+ * is, so it is gated purely on `registration.update` ("amend a
  * registration") rather than ownership.
  */
 router.post('/:reference/waive',
   authenticate,
   loadPermissions,
-  requirePermission('cpd.registration.update'),
+  requirePermission('registration.update'),
   validate({
     params: z.object({ reference: z.string().trim().min(1).max(48) }),
     body: z.object({
@@ -418,7 +422,7 @@ router.post('/:reference/waive',
 router.get('/',
   authenticate,
   loadPermissions,
-  requirePermission('cpd.registration.view'),
+  requirePermission('registration.view'),
   validate({
     query: paginationSchema.extend({
       eventId: z.coerce.number().int().positive().optional(),

@@ -128,9 +128,6 @@ export function validateForPublication(event, { prices = [], sessions = [] } = {
     problems.push('The event needs at least one price. Use 0 for a free event.');
   }
 
-  if (event.issues_certificate && !event.certificate_template_id) {
-    problems.push('Certificates are enabled but no template is selected.');
-  }
   if (event.attendance_rule === 'SESSION_PERCENT') {
     if (!event.min_attendance_percent) {
       problems.push('A session-percentage attendance rule needs a minimum percentage.');

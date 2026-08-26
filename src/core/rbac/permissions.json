@@ -72,46 +72,130 @@
       "description": "Configure registration questions"
     },
     {
-      "key": "cpd.registration.view",
-      "module": "cpd",
+      "key": "registration.view",
+      "module": "core",
       "resource": "registration",
       "action": "view",
-      "description": "View CPD registrations"
+      "description": "View registrations across all modules"
     },
     {
-      "key": "cpd.registration.create",
-      "module": "cpd",
+      "key": "registration.create",
+      "module": "core",
       "resource": "registration",
       "action": "create",
       "description": "Register a participant on their behalf"
     },
     {
-      "key": "cpd.registration.update",
-      "module": "cpd",
+      "key": "registration.update",
+      "module": "core",
       "resource": "registration",
       "action": "update",
       "description": "Amend a registration"
     },
     {
-      "key": "cpd.registration.approve",
-      "module": "cpd",
+      "key": "registration.approve",
+      "module": "core",
       "resource": "registration",
       "action": "approve",
       "description": "Approve or resolve a flagged registration"
     },
     {
-      "key": "cpd.registration.cancel",
-      "module": "cpd",
+      "key": "registration.cancel",
+      "module": "core",
       "resource": "registration",
       "action": "cancel",
       "description": "Cancel a registration"
     },
     {
-      "key": "cpd.registration.export",
-      "module": "cpd",
+      "key": "registration.export",
+      "module": "core",
       "resource": "registration",
       "action": "export",
       "description": "Export participant data"
+    },
+    {
+      "key": "summit.view",
+      "module": "summit",
+      "resource": "event",
+      "action": "view",
+      "description": "View Summit events including drafts"
+    },
+    {
+      "key": "summit.create",
+      "module": "summit",
+      "resource": "event",
+      "action": "create",
+      "description": "Create a Summit event"
+    },
+    {
+      "key": "summit.update",
+      "module": "summit",
+      "resource": "event",
+      "action": "update",
+      "description": "Edit a Summit event"
+    },
+    {
+      "key": "summit.delete",
+      "module": "summit",
+      "resource": "event",
+      "action": "delete",
+      "description": "Delete a draft Summit event"
+    },
+    {
+      "key": "summit.publish",
+      "module": "summit",
+      "resource": "event",
+      "action": "publish",
+      "description": "Publish a Summit event and open registration"
+    },
+    {
+      "key": "summit.cancel",
+      "module": "summit",
+      "resource": "event",
+      "action": "cancel",
+      "description": "Cancel a Summit event and trigger refunds"
+    },
+    {
+      "key": "summit.archive",
+      "module": "summit",
+      "resource": "event",
+      "action": "archive",
+      "description": "Archive a completed Summit event"
+    },
+    {
+      "key": "summit.question.manage",
+      "module": "summit",
+      "resource": "question",
+      "action": "manage",
+      "description": "Configure registration questions"
+    },
+    {
+      "key": "abstract.view",
+      "module": "abstract",
+      "resource": "abstract",
+      "action": "view",
+      "description": "View abstract and paper submissions"
+    },
+    {
+      "key": "abstract.review",
+      "module": "abstract",
+      "resource": "abstract",
+      "action": "review",
+      "description": "Claim a submission for review and leave review notes"
+    },
+    {
+      "key": "abstract.decide",
+      "module": "abstract",
+      "resource": "abstract",
+      "action": "decide",
+      "description": "Accept or reject a submission"
+    },
+    {
+      "key": "abstract.export",
+      "module": "abstract",
+      "resource": "abstract",
+      "action": "export",
+      "description": "Export the submission list"
     },
     {
       "key": "attendance.view",
@@ -356,13 +440,18 @@
         "cpd.view",
         "cpd.publish",
         "cpd.approve",
-        "cpd.registration.view",
-        "cpd.registration.export",
+        "summit.view",
+        "summit.publish",
+        "registration.view",
+        "registration.export",
         "attendance.view",
         "payment.view",
         "certificate.view",
         "certificate.revoke",
         "evaluation.view",
+        "abstract.view",
+        "abstract.decide",
+        "abstract.export",
         "reports.view",
         "reports.export",
         "reports.financial",
@@ -385,12 +474,19 @@
         "cpd.cancel",
         "cpd.archive",
         "cpd.question.manage",
-        "cpd.registration.view",
-        "cpd.registration.create",
-        "cpd.registration.update",
-        "cpd.registration.approve",
-        "cpd.registration.cancel",
-        "cpd.registration.export",
+        "summit.view",
+        "summit.create",
+        "summit.update",
+        "summit.delete",
+        "summit.cancel",
+        "summit.archive",
+        "summit.question.manage",
+        "registration.view",
+        "registration.create",
+        "registration.update",
+        "registration.approve",
+        "registration.cancel",
+        "registration.export",
         "attendance.view",
         "attendance.mark",
         "attendance.import",
@@ -399,6 +495,10 @@
         "certificate.view",
         "certificate.generate",
         "evaluation.view",
+        "abstract.view",
+        "abstract.review",
+        "abstract.decide",
+        "abstract.export",
         "reports.view",
         "reports.export",
         "users.view",
@@ -415,14 +515,17 @@
       "permissions": [
         "events.view",
         "cpd.view",
-        "cpd.registration.view",
-        "cpd.registration.export",
+        "summit.view",
+        "registration.view",
+        "registration.export",
         "attendance.view",
         "attendance.export",
         "certificate.view",
         "evaluation.view",
         "evaluation.manage",
         "evaluation.export",
+        "abstract.view",
+        "abstract.export",
         "reports.view",
         "reports.export",
         "partners.view"
@@ -436,7 +539,8 @@
       "permissions": [
         "events.view",
         "cpd.view",
-        "cpd.registration.view",
+        "summit.view",
+        "registration.view",
         "payment.view",
         "payment.refund",
         "payment.export",
@@ -475,7 +579,8 @@
       "permissions": [
         "events.view",
         "cpd.view",
-        "cpd.registration.view",
+        "summit.view",
+        "registration.view",
         "attendance.view",
         "attendance.mark",
         "partners.view"
