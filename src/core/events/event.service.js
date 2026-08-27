@@ -12,7 +12,7 @@ import {
 const {
   Event, EventType, EventPrice, EventSession, EventSpeaker,
   RegistrationQuestion, Registration, CpdEventDetail, SummitEventDetail,
-  EventTrack, EventSponsorshipTier, Country,
+  EventTrack, EventSponsorshipTier, Country, EvaluationForm, EvaluationQuestion,
 } = models;
 
 /**
@@ -38,6 +38,16 @@ export const DETAIL_INCLUDE = [
     include: [{ model: models.File, as: 'photo' }],
   },
   { model: RegistrationQuestion, as: 'questions', separate: true, order: [['sort_order', 'ASC']] },
+  {
+    model: EvaluationForm,
+    as: 'evaluationForms',
+    where: { phase: 'POST' },
+    required: false,
+    separate: true,
+    include: [{
+      model: EvaluationQuestion, as: 'questions', separate: true, order: [['sort_order', 'ASC']],
+    }],
+  },
   { model: CpdEventDetail, as: 'cpd' },
   { model: SummitEventDetail, as: 'summit' },
   { model: EventTrack, as: 'tracks', separate: true, order: [['sort_order', 'ASC']] },

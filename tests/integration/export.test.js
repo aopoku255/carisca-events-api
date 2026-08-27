@@ -189,9 +189,12 @@ describe('the event summary', () => {
   });
 
   test('missing demographics are labelled rather than dropped', async () => {
+    // Registration itself now requires a complete profile, so the missing
+    // demographics have to appear after the fact — a profile edited blank
+    // later, or data from before this gate existed — not at registration.
     const bare = await makeUser({ roleKey: 'participant' });
-    await bare.update({ organization: null, country_code: null });
     await registrationService.register({ eventId: event.id, user: bare, mediaConsent: true });
+    await bare.update({ organization: null, country_code: null });
 
     const res = await request(server)
       .get(`/api/v1/cpd/events/${event.id}/summary`)

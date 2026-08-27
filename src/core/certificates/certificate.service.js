@@ -5,6 +5,7 @@ import { getPage } from './browser.js';
 import { models } from '../../database/models/index.js';
 import { verificationCode } from '../../lib/ids.js';
 import * as storage from '../files/storage.service.js';
+import { hasCompletedRequiredSurvey } from '../evaluations/evaluation.service.js';
 import env from '../../config/env.js';
 
 const {
@@ -36,18 +37,18 @@ function formatCertificateDate(startAt, timezone = 'Africa/Accra') {
  * event publishes on its page (see `serialisePublicEvent`'s `attendance`
  * block) reduced to what is actually enforceable today.
  *
- * `certificate_requires_evaluation` is deliberately not checked: there is no
- * evaluation feature yet to have been completed, so a gate on it could never
- * be satisfied. It is enforced once that feature exists, not before.
- *
  * "The program is done" is checked two ways, either satisfying it: the
  * `complete` transition (a manual staff action) if staff have run it, or
  * `end_at` having simply passed. The transition alone isn't relied on
  * because nothing auto-runs it — an event staff never gets around to
  * marking `COMPLETED` would otherwise block a certificate forever for a
  * participant who genuinely finished the program.
+ *
+ * `certificate_requires_evaluation` is now enforced (`hasCompletedRequiredSurvey`,
+ * evaluation.service.js) — it stayed unchecked here for a while because there
+ * was no survey feature yet to have been completed.
  */
-export function certificateEligibility(registration) {
+export async function certificateEligibility(registration) {
   const event = registration.event;
   if (!event) return { eligible: false, reason: 'This registration has no event.' };
   if (!event.issues_certificate) {
@@ -66,6 +67,13 @@ export function certificateEligibility(registration) {
       eligible: false,
       code: 'EVENT_NOT_FINISHED',
       reason: 'Your certificate will be available once the program ends.',
+    };
+  }
+  if (!(await hasCompletedRequiredSurvey(registration, event))) {
+    return {
+      eligible: false,
+      code: 'EVALUATION_REQUIRED',
+      reason: 'Complete the post-event survey before downloading your certificate.',
     };
   }
   if (registration.wants_certificate === false) {
@@ -158,7 +166,7 @@ async function ensureCertificateRecord(registration, signatureTwo) {
 }
 
 export async function generateCertificate(registration, { format = 'pdf' } = {}) {
-  const { eligible, code, reason } = certificateEligibility(registration);
+  const { eligible, code, reason } = await certificateEligibility(registration);
   if (!eligible) throw new ConflictError(reason, code);
 
   const event = registration.event;

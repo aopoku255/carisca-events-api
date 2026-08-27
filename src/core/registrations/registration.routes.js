@@ -5,6 +5,7 @@ import { models } from '../../database/models/index.js';
 import * as registrationService from './registration.service.js';
 import * as eventService from '../events/event.service.js';
 import { generateCertificate, certificateEligibility } from '../certificates/certificate.service.js';
+import * as evaluationService from '../evaluations/evaluation.service.js';
 import { resolvePrice } from '../events/price-resolver.service.js';
 import { serialiseRegistration } from '../events/event.serialiser.js';
 import { ok, created, paginated } from '../../lib/response.js';
@@ -131,11 +132,12 @@ router.get('/mine',
       const registrations = await registrationService.findForUser(req.user.id, {
         status: req.validatedQuery.status,
       });
-      return ok(res, registrations.map((r) => {
-        const data = serialiseRegistration(r);
-        data.certificate = certificateEligibility(r);
-        return data;
+      const data = await Promise.all(registrations.map(async (r) => {
+        const row = serialiseRegistration(r);
+        row.certificate = await certificateEligibility(r);
+        return row;
       }));
+      return ok(res, data);
     } catch (err) {
       return next(err);
     }
@@ -291,7 +293,7 @@ router.get('/:reference',
       const data = serialiseRegistration(req.registration, {
         includeAnswers: true, includeWaiver: req.viewerIsStaff,
       });
-      data.certificate = certificateEligibility(req.registration);
+      data.certificate = await certificateEligibility(req.registration);
       return ok(res, data);
     } catch (err) {
       return next(err);
@@ -323,6 +325,56 @@ router.get('/:reference/certificate',
       // Content-Type it set through send(), which is meaningless on a PDF or
       // a PNG and confuses some clients about how to decode the body.
       return res.end(buffer);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * The post-event survey. Owner-only, same as the certificate above. Absent
+ * questions (`questions: []`) means the event has no survey configured —
+ * the frontend treats that as "nothing to show here", not an error.
+ */
+router.get('/:reference/evaluation',
+  authenticate,
+  validate({ params: z.object({ reference: z.string().trim().min(1).max(48) }) }),
+  loadOwnedRegistration,
+  async (req, res, next) => {
+    try {
+      const survey = await evaluationService.getSurveyFor(req.registration);
+      if (!survey) return ok(res, { questions: [], answers: {} });
+
+      const answers = {};
+      for (const response of survey.responses) {
+        answers[String(response.question_id)] = response.value;
+      }
+
+      return ok(res, {
+        questions: survey.questions.map((q) => ({
+          id: String(q.id),
+          label: q.label,
+          type: q.type,
+          options: q.options ?? null,
+          required: !!q.is_required,
+        })),
+        answers,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+router.post('/:reference/evaluation',
+  authenticate,
+  validate({
+    params: z.object({ reference: z.string().trim().min(1).max(48) }),
+    body: z.object({ answers: z.record(z.string(), z.any()).default({}) }),
+  }),
+  loadOwnedRegistration,
+  async (req, res, next) => {
+    try {
+      await evaluationService.submitResponses(req.registration, req.body.answers);
+      return ok(res, { submitted: true }, 'Thank you — your response has been recorded.');
     } catch (err) {
       return next(err);
     }

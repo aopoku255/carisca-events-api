@@ -76,6 +76,31 @@ export const questionsSchema = z.object({
   questions: z.array(questionSchema).max(60),
 });
 
+// `evaluation_questions` has no `help_text` column and a `category` one
+// registration questions don't — a genuinely different shape, not the same
+// schema reused, even though most fields line up.
+export const evaluationQuestionSchema = z.object({
+  label: z.string().trim().min(1).max(500),
+  type: z.enum([
+    'TEXT', 'LONGTEXT', 'NUMBER', 'SELECT', 'MULTISELECT',
+    'RADIO', 'CHECKBOX', 'RATING', 'NPS', 'DATE',
+  ]),
+  options: z.array(z.object({
+    value: z.string().trim().min(1).max(120),
+    label: z.string().trim().min(1).max(200),
+  })).max(100).optional(),
+  category: z.string().trim().max(48).optional(),
+  required: z.boolean().default(false),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+}).refine(
+  (q) => !['SELECT', 'MULTISELECT', 'RADIO'].includes(q.type) || (q.options?.length ?? 0) > 0,
+  { message: 'A choice question needs at least one option.', path: ['options'] },
+);
+
+export const evaluationQuestionsSchema = z.object({
+  questions: z.array(evaluationQuestionSchema).max(60),
+});
+
 export const priceSchema = z.object({
   tier: z.string().trim().max(48).default('standard'),
   label: z.string().trim().min(1).max(120),

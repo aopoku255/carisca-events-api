@@ -204,7 +204,11 @@ export function summariseResponses(questions, answers, responses) {
     }
 
     if (TEXTUAL.has(question.type)) return { ...base, text: textSummary(own) };
-    if (question.type === 'NUMBER') return { ...base, number: numberSummary(own) };
+    // RATING/NPS are evaluation-only types (never appear on a registration
+    // question) — same shape of number as NUMBER, just a fixed scale.
+    if (question.type === 'NUMBER' || question.type === 'RATING' || question.type === 'NPS') {
+      return { ...base, number: numberSummary(own) };
+    }
     if (question.type === 'DATE') return { ...base, date: dateSummary(own) };
     if (question.type === 'FILE') return { ...base, uploaded: answered };
 

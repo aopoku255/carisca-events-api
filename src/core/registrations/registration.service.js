@@ -10,6 +10,7 @@ import { record as audit } from '../audit/audit.service.js';
 import { resolvePrice } from '../events/price-resolver.service.js';
 import { toMinor } from '../../lib/money.js';
 import { validateAnswers } from './answer-validator.js';
+import { missingProfileFields } from '../users/profile-completeness.js';
 import { logger } from '../../lib/logger.js';
 
 const {
@@ -103,6 +104,15 @@ export async function register({
   evidenceFileId = null,
   preferredCurrency = null,
 }, { context = {} } = {}) {
+  const missing = missingProfileFields(user);
+  if (missing.length) {
+    throw new ConflictError(
+      'Finish your profile before registering.',
+      'PROFILE_INCOMPLETE',
+      { missingFields: missing.map((f) => f.key), missingLabels: missing.map((f) => f.label) },
+    );
+  }
+
   const result = await sequelize.transaction(async (transaction) => {
     // Lock first. Everything after this is serialised per event.
     const event = await Event.findByPk(eventId, { transaction, lock: transaction.LOCK.UPDATE });

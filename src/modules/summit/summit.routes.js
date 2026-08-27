@@ -12,11 +12,14 @@ import {
 } from '../../middleware/authenticate.js';
 import { record as audit } from '../../core/audit/audit.service.js';
 import { summariseResponses } from '../cpd/response-summary.js';
+import * as evaluationService from '../../core/evaluations/evaluation.service.js';
+import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
+import * as cpdSchema from '../cpd/cpd.validation.js';
 import * as schema from './summit.validation.js';
 
 const {
   Event, EventType, EventPrice, EventSession, EventSpeaker,
-  RegistrationQuestion, EventPartner, EventTrack, EventSponsorshipTier,
+  RegistrationQuestion, EventPartner, EventTrack, EventSponsorshipTier, Registration,
 } = models;
 
 const MODULE_KEY = 'summit';
@@ -359,6 +362,129 @@ router.put('/events/:id/questions',
 
       const event = await eventService.findById(eventId);
       return ok(res, serialiseAdminEvent(event), 'Registration questions saved.');
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/** See cpd.routes.js's identical route for why the form itself is never exposed directly. */
+router.put('/events/:id/evaluation-questions',
+  requirePermission('evaluation.manage'),
+  validate({ params: schema.idParam, body: cpdSchema.evaluationQuestionsSchema }),
+  loadSummitEvent,
+  async (req, res, next) => {
+    try {
+      await evaluationService.saveQuestions(req.params.id, req.body.questions, {
+        actor: actorOf(req), context: contextOf(req),
+      });
+      const event = await eventService.findById(req.params.id);
+      return ok(res, serialiseAdminEvent(event), 'Survey questions saved.');
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+router.get('/events/:id/evaluation-responses',
+  requirePermission('evaluation.view'),
+  validate({ params: schema.idParam }),
+  loadSummitEvent,
+  async (req, res, next) => {
+    try {
+      const eventId = req.params.id;
+      const questions = await evaluationService.questionsForEvent(eventId);
+
+      const countable = { [Op.notIn]: ['CANCELLED', 'REFUNDED'] };
+      const [responses, answers] = await Promise.all([
+        Registration.count({ where: { event_id: eventId, status: countable } }),
+        questions.length
+          ? sequelize.query(
+            `SELECT er.question_id, er.value
+               FROM evaluation_responses er
+               JOIN evaluation_forms ef ON ef.id = er.form_id
+               JOIN registrations r ON r.id = er.registration_id
+              WHERE ef.event_id = :eventId
+                AND r.deleted_at IS NULL
+                AND r.status NOT IN ('CANCELLED', 'REFUNDED')
+              ORDER BY er.id ASC`,
+            { replacements: { eventId }, type: sequelize.QueryTypes.SELECT },
+          )
+          : [],
+      ]);
+
+      return ok(res, {
+        eventId: String(eventId),
+        responses,
+        questions: summariseResponses(
+          questions.map((q) => ({
+            id: q.id, label: q.label, type: q.type, is_required: q.is_required, options: q.options,
+          })),
+          answers,
+          responses,
+        ),
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+router.get('/events/:id/evaluation-responses/export',
+  requirePermission('evaluation.export'),
+  validate({ params: schema.idParam }),
+  loadSummitEvent,
+  async (req, res, next) => {
+    try {
+      const eventId = req.params.id;
+      const questions = await evaluationService.questionsForEvent(eventId);
+
+      const rows = questions.length
+        ? await sequelize.query(
+          `SELECT r.reference, r.id AS registration_id, u.first_name, u.last_name,
+                  er.question_id, er.value
+             FROM evaluation_responses er
+             JOIN evaluation_forms ef ON ef.id = er.form_id
+             JOIN registrations r ON r.id = er.registration_id
+             JOIN users u ON u.id = r.user_id
+            WHERE ef.event_id = :eventId
+              AND r.deleted_at IS NULL
+              AND r.status NOT IN ('CANCELLED', 'REFUNDED')
+            ORDER BY r.id ASC`,
+          { replacements: { eventId }, type: sequelize.QueryTypes.SELECT },
+        )
+        : [];
+
+      const byRegistration = new Map();
+      for (const row of rows) {
+        if (!byRegistration.has(row.registration_id)) {
+          byRegistration.set(row.registration_id, {
+            reference: row.reference,
+            name: `${row.first_name} ${row.last_name}`.trim(),
+            answers: {},
+          });
+        }
+        byRegistration.get(row.registration_id).answers[row.question_id] = row.value;
+      }
+
+      const columns = [
+        { key: 'reference', header: 'Reference' },
+        { key: 'name', header: 'Participant' },
+        ...questions.map((q) => ({
+          header: q.label,
+          map: (r) => r.answers[q.id] ?? '',
+        })),
+      ];
+
+      const csv = toCsv(columns, [...byRegistration.values()]);
+
+      await audit({
+        actor: actorOf(req),
+        action: 'evaluation.exported',
+        resourceType: 'event',
+        resourceId: eventId,
+        metadata: { rows: byRegistration.size },
+        context: contextOf(req),
+      });
+
+      return sendCsv(res, exportFilename(`${req.event.slug}-survey`), csv);
     } catch (err) {
       return next(err);
     }

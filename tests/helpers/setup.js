@@ -6,7 +6,25 @@ import { getRedis, closeRedis } from '../../src/config/redis.js';
 import { closeBrowser } from '../../src/core/certificates/browser.js';
 import { createApp } from '../../src/app.js';
 
-const { User, Role, Department } = models;
+const {
+  User, Role, Department, Position, Sector,
+} = models;
+
+let defaultProfileIdsPromise = null;
+/**
+ * Registration now requires a complete profile (phone, country, org, job
+ * title, position, sector) — resolved once and cached so every `makeUser()`
+ * call doesn't re-query the two lookup tables.
+ */
+function defaultProfileIds() {
+  if (!defaultProfileIdsPromise) {
+    defaultProfileIdsPromise = Promise.all([
+      Position.findOne({ where: { key: 'other_supply_chain' } }),
+      Sector.findOne({ where: { key: 'business' } }),
+    ]).then(([position, sector]) => ({ positionId: position.id, sectorId: sector.id }));
+  }
+  return defaultProfileIdsPromise;
+}
 
 /**
  * Tests run against a real MySQL database (carisca_dev_test), migrated and
@@ -43,7 +61,13 @@ export async function flushPermissionCache() {
 
 export const TEST_PASSWORD = 'correct-horse-battery-staple';
 
-/** Creates a user, optionally staff, optionally holding a role. */
+/**
+ * Creates a user, optionally staff, optionally holding a role. Defaults to a
+ * complete profile — phone/country/organization/jobTitle/position/sector all
+ * set — since registering for an event now requires one; pass any of those
+ * as `null` explicitly to get an incomplete profile for testing that gate
+ * itself.
+ */
 export async function makeUser({
   email,
   roleKey = null,
@@ -51,8 +75,20 @@ export async function makeUser({
   status = 'ACTIVE',
   firstName = 'Test',
   lastName = 'User',
+  phone = '+233555000111',
+  countryCode = 'GH',
+  organization = 'Test Organization',
+  jobTitle = 'Test Role',
+  positionId,
+  sectorId,
 } = {}) {
   const address = email || `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.test`;
+
+  if (positionId === undefined || sectorId === undefined) {
+    const defaults = await defaultProfileIds();
+    if (positionId === undefined) positionId = defaults.positionId;
+    if (sectorId === undefined) sectorId = defaults.sectorId;
+  }
 
   const user = await User.create({
     email: address,
@@ -62,6 +98,12 @@ export async function makeUser({
     status,
     is_staff: isStaff,
     email_verified_at: new Date(),
+    phone,
+    country_code: countryCode,
+    organization,
+    job_title: jobTitle,
+    position_id: positionId,
+    sector_id: sectorId,
   });
 
   if (roleKey) {

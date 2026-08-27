@@ -69,6 +69,34 @@ describe('registering', () => {
     expect(res.body.data.registration.reference).toMatch(/^CAR-CPD-\d{2}-[A-Z0-9]{6}$/);
   });
 
+  test('an incomplete profile is refused before anything else is checked', async () => {
+    const event = await makeEvent({ amountMinor: 0 });
+    const user = await makeUser({ roleKey: 'participant', phone: null, organization: null });
+
+    const res = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user))
+      .send({ eventId: Number(event.id), attendanceMode: 'IN_PERSON', mediaConsent: true });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('PROFILE_INCOMPLETE');
+    expect(res.body.error.details.missingFields).toEqual(expect.arrayContaining(['phone', 'organization']));
+    // Country/job title/position/sector were left at makeUser()'s complete
+    // defaults — only the two explicitly nulled fields should be reported.
+    expect(res.body.error.details.missingFields).toHaveLength(2);
+  });
+
+  test('a complete profile registers normally', async () => {
+    const event = await makeEvent({ amountMinor: 0 });
+    const user = await makeUser({ roleKey: 'participant' });
+
+    const res = await request(server).post('/api/v1/registrations')
+      .set(authHeader(user))
+      .send({ eventId: Number(event.id), attendanceMode: 'IN_PERSON', mediaConsent: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.registration.status).toBe('CONFIRMED');
+  });
+
   test('a paid event holds the place pending payment', async () => {
     const event = await makeEvent({ amountMinor: 5000, currency: 'USD' });
     const user = await participant();

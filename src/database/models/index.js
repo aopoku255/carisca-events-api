@@ -13,6 +13,7 @@ import defineTrack from './track.js';
 import defineAbstract from './abstract.js';
 import defineCertificate from './certificate.js';
 import definePayment from './payment.js';
+import defineEvaluation from './evaluation.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -34,6 +35,7 @@ Object.assign(registry, defineTrack(sequelize));
 Object.assign(registry, defineAbstract(sequelize));
 Object.assign(registry, defineCertificate(sequelize));
 Object.assign(registry, definePayment(sequelize));
+Object.assign(registry, defineEvaluation(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
@@ -45,6 +47,7 @@ const {
   Registration, RegistrationAnswer, RegistrationStatusHistory, AttendanceRecord,
   Partner, EventPartner, EventTrack, EventSponsorshipTier, AbstractSubmission,
   Certificate, CertificateTemplate, Payment, PaymentEvent,
+  EvaluationForm, EvaluationQuestion, EvaluationResponse,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -122,6 +125,17 @@ Registration.hasMany(RegistrationAnswer, { foreignKey: 'registration_id', as: 'a
 RegistrationAnswer.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
 RegistrationAnswer.belongsTo(RegistrationQuestion, { foreignKey: 'question_id', as: 'question' });
 RegistrationQuestion.hasMany(RegistrationAnswer, { foreignKey: 'question_id', as: 'answers' });
+
+Event.hasMany(EvaluationForm, { foreignKey: 'event_id', as: 'evaluationForms' });
+EvaluationForm.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+EvaluationForm.hasMany(EvaluationQuestion, { foreignKey: 'form_id', as: 'questions' });
+EvaluationQuestion.belongsTo(EvaluationForm, { foreignKey: 'form_id', as: 'form' });
+EvaluationForm.hasMany(EvaluationResponse, { foreignKey: 'form_id', as: 'responses' });
+EvaluationResponse.belongsTo(EvaluationForm, { foreignKey: 'form_id', as: 'form' });
+EvaluationResponse.belongsTo(EvaluationQuestion, { foreignKey: 'question_id', as: 'question' });
+EvaluationQuestion.hasMany(EvaluationResponse, { foreignKey: 'question_id', as: 'responses' });
+Registration.hasMany(EvaluationResponse, { foreignKey: 'registration_id', as: 'evaluationResponses' });
+EvaluationResponse.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
 
 Registration.hasMany(RegistrationStatusHistory, { foreignKey: 'registration_id', as: 'history' });
 RegistrationStatusHistory.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });

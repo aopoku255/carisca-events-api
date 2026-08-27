@@ -34,6 +34,13 @@ export function serialiseUser(user, { permissions = null } = {}) {
     isStaff: !!user.is_staff,
     emailVerified: !!user.email_verified_at,
     departmentId: user.department_id ? String(user.department_id) : null,
+    // Raw ids, always present — unlike `position`/`sector` below, which only
+    // appear when the caller eagerly loaded those associations. Cheap (no
+    // extra query, the FK is already on the row) and it's what registration's
+    // profile-completeness check needs without forcing every authenticated
+    // request to join two more tables just to answer a yes/no.
+    positionId: user.position_id ? String(user.position_id) : null,
+    sectorId: user.sector_id ? String(user.sector_id) : null,
     lastLoginAt: user.last_login_at ?? null,
     // `timestamps: true` names this attribute createdAt even under
     // `underscored: true` — that option renames the column, not the attribute.

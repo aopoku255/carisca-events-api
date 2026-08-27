@@ -78,6 +78,25 @@ function questions(event) {
   }));
 }
 
+/**
+ * Admin-only (see `serialiseAdminEvent`, not the public serialiser) — a
+ * participant reaches their survey through the owner-only
+ * `/registrations/:reference/evaluation` route instead, not this one.
+ */
+function evaluationQuestions(event) {
+  const form = event.evaluationForms?.[0];
+  if (!form?.questions) return undefined;
+  return form.questions.map((q) => ({
+    id: String(q.id),
+    label: q.label,
+    type: q.type,
+    options: q.options ?? null,
+    category: q.category ?? null,
+    required: !!q.is_required,
+    sortOrder: q.sort_order,
+  }));
+}
+
 function sessions(event) {
   if (!event.sessions) return undefined;
   return event.sessions.map((s) => ({
@@ -212,6 +231,7 @@ export function serialiseAdminEvent(event, { capacity = null } = {}) {
     updatedAt: event.updated_at,
     prices: prices(event),
     questions: questions(event),
+    evaluationQuestions: evaluationQuestions(event),
     sessions: sessions(event),
     speakers: speakers(event),
     cpd: cpd(event),
