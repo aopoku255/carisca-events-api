@@ -9,7 +9,7 @@ import { logger } from '../../lib/logger.js';
 import env from '../../config/env.js';
 
 const {
-  Payment, PaymentEvent, Registration, User,
+  Payment, PaymentEvent, Registration, User, Event,
 } = models;
 
 /**
@@ -84,7 +84,9 @@ export async function markPaymentFailed(payment, reason) {
   });
 
   const registration = payment.registration_id
-    ? await Registration.findByPk(payment.registration_id, { include: [{ model: User, as: 'user' }] })
+    ? await Registration.findByPk(payment.registration_id, {
+      include: [{ model: User, as: 'user' }, { model: Event, as: 'event' }],
+    })
     : null;
 
   if (registration?.user) {
@@ -96,6 +98,8 @@ export async function markPaymentFailed(payment, reason) {
       subject: 'Your payment did not go through',
       payload: {
         firstName: registration.user.first_name,
+        eventTitle: registration.event?.title,
+        bannerFileId: registration.event?.banner_file_id,
         reference: registration.reference,
         reason,
         payUrl: `${env.WEB_URL}/dashboard/registrations/${registration.reference}/pay`,

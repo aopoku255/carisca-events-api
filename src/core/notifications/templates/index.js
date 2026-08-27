@@ -15,16 +15,32 @@ const escape = (s) => String(s ?? '')
 
 const BRAND = { blue: '#0F3B8F', navy: '#0A2961', slate: '#677289', mist: '#B3BDD1' };
 
-function layout({ heading, body, cta }) {
+/** Public file URLs, absolute — an email client has no base URL to resolve a relative one against. */
+const fileUrl = (id) => (id ? `${env.API_URL}/api/v1/files/${id}` : null);
+
+/**
+ * The three-institution lockup already used site-wide (see
+ * `carisca-web/src/app/layout.tsx`'s footer) — served from `carisca-web`'s
+ * own `public/` folder, so no upload or file-id lookup is needed here.
+ */
+const TRILOGO_URL = `${env.WEB_URL}/carisca-trilogo.png`;
+
+function layout({
+  heading, body, cta, bannerUrl,
+}) {
   return `<!doctype html>
 <html><body style="margin:0;padding:0;background:#F4F7FC;font-family:Arial,Helvetica,sans-serif;color:#111C36">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
              style="max-width:560px;background:#fff;border:1px solid ${BRAND.mist};border-radius:4px">
+        ${bannerUrl ? `<tr><td>
+          <img src="${escape(bannerUrl)}" alt="" width="560"
+               style="display:block;width:100%;max-width:560px;height:auto;border-radius:4px 4px 0 0">
+        </td></tr>` : ''}
         <tr><td style="background:${BRAND.blue};padding:20px 28px">
           <div style="color:#fff;font-size:18px;font-weight:bold;letter-spacing:.5px">CARISCA</div>
-          <div style="color:#C7D6F2;font-size:11px;margin-top:2px">Strong Supply Chains — Strong Communities</div>
+          <div style="color:#C7D6F2;font-size:11px;margin-top:2px">Strong Supply Chains, Strong Communities</div>
         </td></tr>
         <tr><td style="padding:28px">
           <h1 style="margin:0 0 16px;font-size:20px;color:${BRAND.navy}">${heading}</h1>
@@ -37,6 +53,10 @@ function layout({ heading, body, cta }) {
         <tr><td style="padding:18px 28px;border-top:1px solid #EBF0F9;font-size:12px;color:${BRAND.slate}">
           Centre for Applied Research and Innovation in Supply Chain-Africa<br>
           KNUST School of Business, Kumasi, Ghana
+        </td></tr>
+        <tr><td style="padding:16px 28px 24px;text-align:center">
+          <img src="${TRILOGO_URL}" alt="KNUST, Learn Logistics by Kühne Foundation, and Arizona State University"
+               width="280" style="display:inline-block;max-width:280px;width:100%;height:auto">
         </td></tr>
       </table>
     </td></tr>
@@ -79,7 +99,7 @@ export const templates = {
            <p><strong>Email:</strong> ${escape(p.email)}<br>
               <strong>Password:</strong> ${escape(p.password)}</p>
            <p style="color:${BRAND.slate};font-size:13px">Change this password from your profile once you have
-              signed in — nobody else should know it once you do.</p>`,
+              signed in. Nobody else should know it once you do.</p>`,
     cta: {
       label: p.isStaff ? 'Sign in to the console' : 'Sign in',
       url: p.isStaff ? `${env.ADMIN_URL}/login` : `${env.WEB_URL}/login`,
@@ -91,7 +111,7 @@ export const templates = {
     heading: 'Reset your password',
     body: `<p>Hello ${escape(p.firstName)}, we received a request to reset your password.</p>
            <p style="color:${BRAND.slate};font-size:13px">This link expires in ${escape(p.expiresInMinutes)} minutes.
-           If you did not ask for this, you can ignore this email — your password will not change.</p>`,
+           If you did not ask for this, you can ignore this email. Your password will not change.</p>`,
     cta: { label: 'Reset my password', url: p.resetUrl },
   }),
 
@@ -101,8 +121,9 @@ export const templates = {
     body: `<p>Hello ${escape(p.firstName)}, you are registered for <strong>${escape(p.eventTitle)}</strong>.</p>
            <p><strong>Reference:</strong> ${escape(p.reference)}<br>
               <strong>Attending:</strong> ${p.attendanceMode === 'VIRTUAL' ? 'Online' : 'In person'}</p>
-           <p>Bring your QR code with you — it is in your dashboard and is how we check you in.</p>`,
+           <p>Bring your QR code with you. It is in your dashboard and is how we check you in.</p>`,
     cta: { label: 'View my registration', url: `${env.WEB_URL}/dashboard/registrations` },
+    banner: fileUrl(p.bannerFileId),
   }),
 
   abstract_decided: (p) => ({
@@ -127,6 +148,7 @@ export const templates = {
            <p><strong>Amount:</strong> ${money(p.amount)}<br>
               <strong>Reference:</strong> ${escape(p.reference)}</p>`,
     cta: { label: 'Pay now', url: p.paymentUrl },
+    banner: fileUrl(p.bannerFileId),
   }),
 
   payment_failed: (p) => ({
@@ -135,8 +157,9 @@ export const templates = {
     body: `<p>Hello ${escape(p.firstName)}, your payment for registration
              <strong>${escape(p.reference)}</strong> did not go through.</p>
            ${p.reason ? `<p style="color:${BRAND.slate}">${escape(p.reason)}</p>` : ''}
-           <p>Your place is still being held — you can try again.</p>`,
+           <p>Your place is still being held. You can try again.</p>`,
     cta: { label: 'Try again', url: p.payUrl },
+    banner: fileUrl(p.bannerFileId),
   }),
 
   registration_waitlisted: (p) => ({
@@ -147,6 +170,7 @@ export const templates = {
               No payment is needed yet.</p>
            <p><strong>Reference:</strong> ${escape(p.reference)}</p>`,
     cta: null,
+    banner: fileUrl(p.bannerFileId),
   }),
 
   waitlist_promoted: (p) => ({
@@ -156,8 +180,9 @@ export const templates = {
              <strong>${escape(p.eventTitle)}</strong>.</p>
            ${p.paymentUrl
     ? `<p>Complete payment by <strong>${when(p.holdExpiresAt)}</strong> to secure it.</p>`
-    : '<p>Your place is confirmed — nothing further is needed.</p>'}`,
+    : '<p>Your place is confirmed. Nothing further is needed.</p>'}`,
     cta: p.paymentUrl ? { label: 'Pay now', url: p.paymentUrl } : null,
+    banner: fileUrl(p.bannerFileId),
   }),
 
   registration_expired: (p) => ({
@@ -167,6 +192,7 @@ export const templates = {
              <strong>${escape(p.reference)}</strong>, so the place has been released.</p>
            <p>You are welcome to register again if places remain.</p>`,
     cta: { label: 'Browse events', url: `${env.WEB_URL}/events` },
+    banner: fileUrl(p.bannerFileId),
   }),
 
   event_updated: (p) => ({
@@ -202,8 +228,12 @@ export function render(template, payload = {}) {
     };
   }
 
-  const { subject, heading, body, cta } = build(payload);
-  const html = layout({ heading, body, cta });
+  const {
+    subject, heading, body, cta, banner,
+  } = build(payload);
+  const html = layout({
+    heading, body, cta, bannerUrl: banner,
+  });
   const text = `${heading}\n\n${body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}`
     + (cta ? `\n\n${cta.label}: ${cta.url}` : '');
 

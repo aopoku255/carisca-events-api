@@ -256,6 +256,7 @@ export async function register({
       payload: {
         firstName: user.first_name,
         eventTitle: event.title,
+        bannerFileId: event.banner_file_id,
         reference: registration.reference,
         attendanceMode,
         amount: price.money,
@@ -427,6 +428,7 @@ export async function waive(registrationId, { actor, amount, reason = null, cont
       payload: {
         firstName: registration.user.first_name,
         eventTitle: registration.event?.title,
+        bannerFileId: registration.event?.banner_file_id,
         reference: registration.reference,
         attendanceMode: registration.attendance_mode,
       },
@@ -501,6 +503,7 @@ export async function confirmPaidRegistration(registrationId, { context = {} } =
       payload: {
         firstName: registration.user.first_name,
         eventTitle: registration.event?.title,
+        bannerFileId: registration.event?.banner_file_id,
         reference: registration.reference,
         attendanceMode: registration.attendance_mode,
       },
@@ -566,6 +569,7 @@ export async function promoteFromWaitlist(eventId, attendanceMode) {
         payload: {
           firstName: registration.user?.first_name,
           eventTitle: event.title,
+          bannerFileId: event.banner_file_id,
           reference: registration.reference,
           holdExpiresAt: registration.hold_expires_at,
           paymentUrl: isFree ? null : `${env.WEB_URL}/dashboard/registrations/${registration.reference}/pay`,
@@ -594,7 +598,7 @@ export async function sweepExpiredHolds({ now = new Date() } = {}) {
       status: 'PENDING_PAYMENT',
       hold_expires_at: { [Op.lt]: now },
     },
-    include: [{ model: User, as: 'user', attributes: ['id', 'email', 'first_name'] }],
+    include: [{ model: User, as: 'user', attributes: ['id', 'email', 'first_name'] }, { model: Event, as: 'event' }],
     limit: 500,
   });
 
@@ -624,6 +628,8 @@ export async function sweepExpiredHolds({ now = new Date() } = {}) {
         subject: 'Your registration has expired',
         payload: {
           firstName: registration.user?.first_name,
+          eventTitle: registration.event?.title,
+          bannerFileId: registration.event?.banner_file_id,
           reference: registration.reference,
         },
         resourceType: 'registration',
