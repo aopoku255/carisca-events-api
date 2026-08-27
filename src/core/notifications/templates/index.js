@@ -129,6 +129,16 @@ export const templates = {
     cta: { label: 'Pay now', url: p.paymentUrl },
   }),
 
+  payment_failed: (p) => ({
+    subject: 'Your payment did not go through',
+    heading: 'Payment did not complete',
+    body: `<p>Hello ${escape(p.firstName)}, your payment for registration
+             <strong>${escape(p.reference)}</strong> did not go through.</p>
+           ${p.reason ? `<p style="color:${BRAND.slate}">${escape(p.reason)}</p>` : ''}
+           <p>Your place is still being held — you can try again.</p>`,
+    cta: { label: 'Try again', url: p.payUrl },
+  }),
+
   registration_waitlisted: (p) => ({
     subject: `Waitlisted: ${p.eventTitle}`,
     heading: "You're on the waitlist",

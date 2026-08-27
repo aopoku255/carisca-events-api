@@ -91,6 +91,11 @@ async function mayRead(file, req) {
   }
 
   const permissions = req.permissions ?? new Set();
+  // A signature image has no per-file "owner" the way registration evidence
+  // does — anyone who can manage certificate templates can see one, not just
+  // whoever happened to upload it.
+  if (file.purpose === 'certificate_signature' && permissions.has('certificate_templates.manage')) return true;
+
   return permissions.has('files.manage') || permissions.has('registration.view');
 }
 

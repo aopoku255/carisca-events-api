@@ -299,6 +299,23 @@ export function serialiseRegistration(registration, {
 
   if (includeQr && registration.qr_token) out.qrToken = registration.qr_token;
 
+  // Every attempt, most recent first — a failed mobile-money try followed by
+  // a successful card one is not unusual, and both are worth showing rather
+  // than only the one that eventually succeeded.
+  if (registration.payments) {
+    out.payments = [...registration.payments]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map((p) => ({
+        reference: p.reference,
+        provider: p.provider,
+        status: p.status,
+        amount: serialiseMoney(p.amount_minor, p.currency),
+        failureReason: p.failure_reason ?? null,
+        paidAt: p.paid_at ?? null,
+        createdAt: p.created_at,
+      }));
+  }
+
   return out;
 }
 

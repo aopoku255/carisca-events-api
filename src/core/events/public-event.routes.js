@@ -51,7 +51,14 @@ router.get('/events',
           // Listings show the banner too; without this the card renders blank.
           { model: models.File, as: 'banner' },
         ],
-        order: [['start_at', when === 'past' ? 'DESC' : 'ASC']],
+        // Newest first: a just-published event should be immediately visible
+        // rather than sinking below whatever else is already scheduled
+        // sooner. `published_at` is always set for anything PUBLIC_STATUSES
+        // returns — every one of those statuses is only reachable through
+        // the `publish` transition, which sets it. Past events keep the old
+        // chronological order (most recently finished first) — nobody is
+        // asking "what's new" about something that already happened.
+        order: [[when === 'past' ? 'start_at' : 'published_at', 'DESC']],
         ...offsetFor({ page, limit }),
         distinct: true,
       });

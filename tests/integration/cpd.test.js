@@ -390,6 +390,25 @@ describe('public discovery', () => {
     expect((await request(server).get(`/api/v1/events/${hidden.slug}`)).status).toBe(404);
   });
 
+  test('a just-published event appears first even if one starting sooner was published earlier', async () => {
+    const tag = `Eta${Date.now()}`;
+    const startsSoon = await createDraft({ title: `Starts soon ${tag}`, startAt: future(5), endAt: future(5) });
+    await setPrices(startsSoon.id, standard);
+    await request(server).post(`/api/v1/cpd/events/${startsSoon.id}/publish`).set(authHeader(director)).send({});
+
+    const startsLate = await createDraft({ title: `Starts much later ${tag}`, startAt: future(180), endAt: future(180) });
+    await setPrices(startsLate.id, standard);
+    await request(server).post(`/api/v1/cpd/events/${startsLate.id}/publish`).set(authHeader(director)).send({});
+
+    const res = await request(server).get(`/api/v1/events?limit=50&q=${tag}`);
+    const titles = res.body.data.map((e) => e.title);
+
+    // Published second, starts far later — still shows first, so a
+    // participant sees what's new rather than it sinking under whatever
+    // was already scheduled sooner.
+    expect(titles.indexOf(`Starts much later ${tag}`)).toBeLessThan(titles.indexOf(`Starts soon ${tag}`));
+  });
+
   test('the public view withholds the joining link and exact headcount', async () => {
     const event = await createDraft({ deliveryMode: 'HYBRID', onlineUrl: 'https://zoom.test/secret-room' });
     await setPrices(event.id, standard);

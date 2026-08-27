@@ -5,6 +5,9 @@ import userRoutes from './core/users/user.routes.js';
 import publicEventRoutes from './core/events/public-event.routes.js';
 import registrationRoutes from './core/registrations/registration.routes.js';
 import certificateRoutes from './core/certificates/certificate.routes.js';
+import certificateTemplateRoutes from './core/certificates/certificate-template.routes.js';
+import paymentRoutes from './core/payments/payment.routes.js';
+import paystackWebhookRoutes from './core/payments/webhook.routes.js';
 import attendanceRoutes from './core/attendance/attendance.routes.js';
 import fileRoutes from './core/files/file.routes.js';
 import partnerRoutes from './core/partners/partner.routes.js';
@@ -35,6 +38,16 @@ router.use('/registrations', registrationRoutes);
 // Certificate verification — public, reached only via the QR code or code
 // printed on a certificate, never through the registration owner's session.
 router.use('/certificates', certificateRoutes);
+// Staff-only management of second-signatory templates — a different mount
+// than /certificates above, which is the public, unauthenticated one.
+router.use('/certificate-templates', certificateTemplateRoutes);
+
+// Payment — a participant paying for their own registration.
+router.use('/payments', paymentRoutes);
+// Provider callback. Lands under the raw-body prefix app.js carves out
+// ahead of express.json(); mounting it here (rather than beside /payments)
+// keeps "a participant acts" and "Paystack calls us back" visibly separate.
+router.use('/webhooks', paystackWebhookRoutes);
 
 // Attendance is shared: the scanner works for any event type.
 router.use('/attendance', attendanceRoutes);

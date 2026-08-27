@@ -184,6 +184,13 @@ const schema = z.object({
           message: 'must not be enabled in production',
         });
       }
+      if (!data.PAYSTACK_SECRET_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['PAYSTACK_SECRET_KEY'],
+          message: 'is required in production — no payment could ever be taken without it',
+        });
+      }
     }
   });
 

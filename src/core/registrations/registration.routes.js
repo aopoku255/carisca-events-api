@@ -18,7 +18,7 @@ import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
 import { record as audit } from '../audit/audit.service.js';
 
 const {
-  Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail,
+  Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail, Payment,
 } = models;
 
 const router = Router();
@@ -252,6 +252,7 @@ async function loadOwnedRegistration(req, res, next) {
         { model: Event, as: 'event', include: [{ model: CpdEventDetail, as: 'cpd' }] },
         { model: User, as: 'user' },
         { model: User, as: 'waivedByUser' },
+        { model: Payment, as: 'payments' },
         {
           model: RegistrationAnswer,
           as: 'answers',

@@ -41,10 +41,24 @@ export const HEIGHT = 1132;
  * where the gold ribbon ends and above the bottom-right corner decoration
  * — measured against the source file the same way the `.whiteout` region
  * was, so it holds regardless of how the banner's own shape was produced.
+ *
+ * The second signature block (right-hand column of the two, currently a
+ * baked-in "Dr John Manso Frimpong") is the one part of the artwork that
+ * can be overridden per event, via a `CertificateTemplate` — see
+ * `certificate.service.js`. `signatoryName`/`signatoryTitle`/
+ * `signatoryDepartment`/`signatureDataUrl` are all optional and all-or-
+ * nothing: when absent (no template set on the event, or a template with no
+ * signature image uploaded yet), no second whiteout is drawn at all and the
+ * artwork's own baked-in second signature shows through untouched — this is
+ * what keeps every event that predates this feature rendering exactly as it
+ * always has. The region itself was measured the same way `.whiteout` was,
+ * directly against `cert-background.jpg`, not eyeballed.
  */
 export function renderCertificateHtml({
   participantName, eventTitle, dateLabel, venue, verificationCode, qrDataUrl,
+  signatoryName, signatoryTitle, signatoryDepartment, signatureDataUrl,
 }) {
+  const hasSignatureTwo = Boolean(signatoryName && signatureDataUrl);
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   @font-face {
@@ -122,6 +136,15 @@ export function renderCertificateHtml({
     font-family: monospace; font-size: 8px; font-weight: 400; color: ${INK};
     margin-top: 3px; letter-spacing: 0; white-space: nowrap;
   }
+
+  .whiteout2 {
+    position: absolute; left: 405px; top: 888px; width: 345px; height: 153px;
+    background: #fff;
+  }
+  .sig2 { position: absolute; left: 405px; top: 888px; width: 345px; text-align: center; }
+  .sig2 img { height: 62px; width: auto; display: block; margin: 0 auto; }
+  .sig2 .sig2-name { font-size: 20px; font-weight: 700; color: ${INK}; margin-top: 10px; }
+  .sig2 .sig2-title { font-size: 14px; font-weight: 300; color: ${INK}; line-height: 1.35; margin-top: 3px; }
 </style></head>
 <body>
   <div class="sheet">
@@ -142,6 +165,14 @@ export function renderCertificateHtml({
       <div class="label">Scan to verify</div>
       <div class="code">${escape(verificationCode)}</div>
     </div>
+
+    ${hasSignatureTwo ? `
+    <div class="whiteout2"></div>
+    <div class="sig2">
+      <img src="${signatureDataUrl}" alt="" />
+      <div class="sig2-name">${escape(signatoryName)}</div>
+      <div class="sig2-title">${escape([signatoryTitle, signatoryDepartment].filter(Boolean).join(', '))}</div>
+    </div>` : ''}
   </div>
 </body></html>`;
 }

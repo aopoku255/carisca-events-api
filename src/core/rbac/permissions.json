@@ -420,6 +420,13 @@
       "resource": "partner",
       "action": "manage",
       "description": "Add, edit and remove partner organizations"
+    },
+    {
+      "key": "certificate_templates.manage",
+      "module": "core",
+      "resource": "certificate_template",
+      "action": "manage",
+      "description": "Add, edit and remove certificate second-signatory templates"
     }
   ],
   "roles": [
@@ -457,7 +464,8 @@
         "reports.financial",
         "users.view",
         "audit.view",
-        "partners.view"
+        "partners.view",
+        "certificate_templates.manage"
       ]
     },
     {
@@ -504,7 +512,8 @@
         "users.view",
         "files.upload",
         "partners.view",
-        "partners.manage"
+        "partners.manage",
+        "certificate_templates.manage"
       ]
     },
     {

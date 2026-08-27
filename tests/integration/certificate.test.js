@@ -22,19 +22,28 @@ afterAll(teardown);
 beforeEach(flushPermissionCache);
 
 let seq = 0;
-async function makeEvent({ amountMinor = 0, issuesCertificate = true } = {}) {
+/**
+ * Finished by default (`end_at` in the past) — certificate eligibility now
+ * requires the program to be over, and most of these tests are about the
+ * download/verification mechanics, not that gate itself. Tests for the gate
+ * pass `startAt`/`endAt` in the future explicitly.
+ */
+async function makeEvent({
+  amountMinor = 0, issuesCertificate = true, status = 'REGISTRATION_OPEN',
+  startAt = new Date(Date.now() - 7 * 864e5), endAt = new Date(Date.now() - 7 * 864e5 + 3 * 3600e3),
+} = {}) {
   seq += 1;
   const event = await Event.create({
     event_type_id: cpdType.id,
     slug: `cert-evt-${Date.now()}-${seq}`,
     title: `Certificate Test Event ${seq}`,
-    start_at: new Date(Date.now() + 7 * 864e5),
-    end_at: new Date(Date.now() + 7 * 864e5 + 3 * 3600e3),
+    start_at: startAt,
+    end_at: endAt,
     timezone: 'Africa/Accra',
     delivery_mode: 'HYBRID',
     country_code: 'GH',
     venue: 'KNUST School of Business',
-    status: 'REGISTRATION_OPEN',
+    status,
     issues_certificate: issuesCertificate,
   });
   await EventPrice.create({
@@ -138,6 +147,42 @@ describe('downloading a certificate', () => {
       .set(authHeader(stranger));
 
     expect(res.status).toBe(403);
+  });
+
+  test('an event that has not finished yet is refused, even though the registration is confirmed', async () => {
+    const event = await makeEvent({
+      startAt: new Date(Date.now() + 7 * 864e5),
+      endAt: new Date(Date.now() + 7 * 864e5 + 3 * 3600e3),
+    });
+    const user = await participant();
+    const reference = await confirmedRegistration({ event, user });
+
+    const res = await request(server)
+      .get(`/api/v1/registrations/${reference}/certificate`)
+      .set(authHeader(user));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('EVENT_NOT_FINISHED');
+  });
+
+  test('staff marking the event complete early makes the certificate available before its scheduled end', async () => {
+    // Registration has to happen while the event is still open — a real
+    // event can't be COMPLETED before anyone was ever allowed to register
+    // for it — so the transition happens after, the same order it would in
+    // practice (staff wrapping up an event ahead of its scheduled end time).
+    const event = await makeEvent({
+      startAt: new Date(Date.now() + 7 * 864e5),
+      endAt: new Date(Date.now() + 7 * 864e5 + 3 * 3600e3),
+    });
+    const user = await participant();
+    const reference = await confirmedRegistration({ event, user });
+    await event.update({ status: 'COMPLETED' });
+
+    const res = await request(server)
+      .get(`/api/v1/registrations/${reference}/certificate`)
+      .set(authHeader(user));
+
+    expect(res.status).toBe(200);
   });
 
   test('opting out of a certificate at registration is honoured', async () => {

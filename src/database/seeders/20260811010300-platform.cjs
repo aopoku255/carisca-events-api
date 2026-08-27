@@ -62,35 +62,29 @@ module.exports = {
       })),
     );
 
-    await queryInterface.bulkInsert('certificate_templates', [{
-      name: 'CARISCA Standard Certificate',
-      description: 'Default landscape certificate of participation.',
-      orientation: 'LANDSCAPE',
-      layout: JSON.stringify({
-        // Percentage coordinates so the layout survives a page-size change.
-        fields: [
-          { key: 'organisation', text: 'CARISCA', x: 50, y: 14, size: 20, align: 'center', color: '#0F3B8F', weight: 'bold' },
-          { key: 'subtitle', text: 'Centre for Applied Research and Innovation in Supply Chain-Africa', x: 50, y: 20, size: 10, align: 'center', color: '#677289' },
-          { key: 'title', text: 'Certificate of Participation', x: 50, y: 32, size: 26, align: 'center', color: '#0A2961' },
-          { key: 'presented_to', text: 'This is to certify that', x: 50, y: 42, size: 11, align: 'center', color: '#677289' },
-          { key: 'participant_name', source: 'participant_name', x: 50, y: 50, size: 28, align: 'center', color: '#0F3B8F' },
-          { key: 'body', text: 'has successfully participated in', x: 50, y: 58, size: 11, align: 'center', color: '#677289' },
-          { key: 'event_title', source: 'event_title', x: 50, y: 65, size: 16, align: 'center', color: '#0A2961' },
-          { key: 'event_dates', source: 'event_dates', x: 50, y: 71, size: 11, align: 'center', color: '#677289' },
-          { key: 'credits', source: 'cpd_credits_label', x: 50, y: 76, size: 10, align: 'center', color: '#677289' },
-          { key: 'verification', source: 'verification_code', x: 50, y: 93, size: 8, align: 'center', color: '#677289' },
-        ],
-        signatories: [
-          { name_source: 'signatory_1_name', title_source: 'signatory_1_title', x: 28, y: 84 },
-          { name_source: 'signatory_2_name', title_source: 'signatory_2_title', x: 72, y: 84 },
-        ],
-        qr: { x: 88, y: 82, size: 12, source: 'verification_url' },
-      }),
-      is_default: true,
-      is_active: true,
-      created_at: ts,
-      updated_at: ts,
-    }]);
+    // No unique constraint on `name` to hang an `updateOnDuplicate` off of
+    // (unlike every other insert in this file) — an existence check does the
+    // same job. Without it, this row silently duplicated on every re-seed.
+    //
+    // `layout`/`orientation`/`background_file_id` are legacy of an earlier,
+    // much larger "custom certificate builder" design that was never built —
+    // left NULL/default here on purpose. What a template actually carries
+    // today is a second-signatory profile (name/title/department/signature
+    // image, added in a later migration) applied to CARISCA's one fixed
+    // design; see `certificate.template.js`.
+    const [existingTemplate] = await queryInterface.sequelize.query(
+      "SELECT id FROM certificate_templates WHERE name = 'CARISCA Standard Certificate' LIMIT 1",
+    );
+    if (!existingTemplate.length) {
+      await queryInterface.bulkInsert('certificate_templates', [{
+        name: 'CARISCA Standard Certificate',
+        description: 'The default template — no second-signatory override until one is filled in.',
+        is_default: true,
+        is_active: true,
+        created_at: ts,
+        updated_at: ts,
+      }]);
+    }
 
     await queryInterface.bulkInsert('system_settings', [
       { key: 'organisation.name', value: JSON.stringify('CARISCA'), description: 'Display name used on certificates and emails', is_public: true, created_at: ts, updated_at: ts },
@@ -102,13 +96,6 @@ module.exports = {
       { key: 'platform.default_timezone', value: JSON.stringify('Africa/Accra'), description: 'Timezone proposed when creating an event', is_public: false, created_at: ts, updated_at: ts },
       { key: 'registration.hold_minutes', value: JSON.stringify(30), description: 'How long a seat is held while a participant pays', is_public: false, created_at: ts, updated_at: ts },
       { key: 'certificate.verification_url', value: JSON.stringify('/verify/certificate'), description: 'Public verification path', is_public: true, created_at: ts, updated_at: ts },
-      // Intentionally blank. Certificates must not be issued with placeholder
-      // signatories, so CertificateEligibilityService refuses to generate until
-      // real names and titles are set at /admin/settings.
-      { key: 'certificate.signatories', value: JSON.stringify([
-        { name: '', title: 'Director, CARISCA' },
-        { name: '', title: 'Programme Lead' },
-      ]), description: 'Certificate signatories — MUST be filled in before the first certificate is generated', is_public: false, created_at: ts, updated_at: ts },
     ], { updateOnDuplicate: ['description', 'is_public', 'updated_at'] });
   },
 

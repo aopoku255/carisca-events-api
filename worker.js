@@ -5,6 +5,7 @@ import { loadCurrencyExponents } from './src/lib/money.js';
 import { dispatchOnce } from './src/jobs/workers/notification-dispatcher.js';
 import { verifyMailer, closeMailer } from './src/core/notifications/channels/mail.js';
 import { sweepExpiredHolds } from './src/core/registrations/registration.service.js';
+import { reconcilePendingPayments } from './src/core/payments/payment.service.js';
 import { logger } from './src/lib/logger.js';
 
 /**
@@ -21,6 +22,7 @@ import { logger } from './src/lib/logger.js';
 const JOBS = [
   { name: 'notifications', everyMs: 10_000, run: () => dispatchOnce() },
   { name: 'hold-sweeper', everyMs: 60_000, run: () => sweepExpiredHolds() },
+  { name: 'payment-reconciler', everyMs: 120_000, run: () => reconcilePendingPayments() },
 ];
 
 let running = true;

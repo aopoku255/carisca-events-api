@@ -12,6 +12,7 @@ import definePartner from './partner.js';
 import defineTrack from './track.js';
 import defineAbstract from './abstract.js';
 import defineCertificate from './certificate.js';
+import definePayment from './payment.js';
 
 export const sequelize = new Sequelize(config[env.NODE_ENV]);
 
@@ -20,8 +21,7 @@ export const sequelize = new Sequelize(config[env.NODE_ENV]);
  * so the association graph is written down in one readable place instead of
  * being scattered across thirty files.
  *
- * Event, registration, payment and attendance models are added here as
- * their modules are built.
+ * Event and registration models are added here as their modules are built.
  */
 const registry = {};
 Object.assign(registry, defineReference(sequelize));
@@ -33,6 +33,7 @@ Object.assign(registry, definePartner(sequelize));
 Object.assign(registry, defineTrack(sequelize));
 Object.assign(registry, defineAbstract(sequelize));
 Object.assign(registry, defineCertificate(sequelize));
+Object.assign(registry, definePayment(sequelize));
 
 // --- associations ----------------------------------------------------------
 const {
@@ -43,7 +44,7 @@ const {
   EventSession, EventSpeaker, RegistrationQuestion,
   Registration, RegistrationAnswer, RegistrationStatusHistory, AttendanceRecord,
   Partner, EventPartner, EventTrack, EventSponsorshipTier, AbstractSubmission,
-  Certificate,
+  Certificate, CertificateTemplate, Payment, PaymentEvent,
 } = registry;
 
 Currency.hasMany(Country, { foreignKey: 'default_currency', as: 'countries' });
@@ -173,6 +174,29 @@ Certificate.belongsTo(Registration, { foreignKey: 'registration_id', as: 'regist
 Certificate.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
 Certificate.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Certificate.belongsTo(User, { foreignKey: 'revoked_by', as: 'revokedBy' });
+
+/**
+ * A template is opt-in per event — `certificate_template_id` is nullable,
+ * and `SET NULL` on delete (already on the FK) means removing a template in
+ * use falls that event back to the default baked-in signature rather than
+ * breaking it.
+ */
+Event.belongsTo(CertificateTemplate, { foreignKey: 'certificate_template_id', as: 'certificateTemplate' });
+CertificateTemplate.hasMany(Event, { foreignKey: 'certificate_template_id', as: 'events' });
+CertificateTemplate.belongsTo(File, { foreignKey: 'signature_file_id', as: 'signatureFile' });
+CertificateTemplate.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+
+/**
+ * A registration can carry more than one payment row across retries (a
+ * failed mobile-money attempt, then a successful card one) — unlike
+ * `Certificate`, this is `hasMany`, not `hasOne`.
+ */
+Registration.hasMany(Payment, { foreignKey: 'registration_id', as: 'payments' });
+Payment.belongsTo(Registration, { foreignKey: 'registration_id', as: 'registration' });
+Payment.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
+Payment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Payment.hasMany(PaymentEvent, { foreignKey: 'payment_id', as: 'events' });
+PaymentEvent.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
 
 AuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
 File.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });

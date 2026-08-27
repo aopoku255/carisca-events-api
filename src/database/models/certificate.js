@@ -36,5 +36,32 @@ export default function defineCertificate(sequelize) {
     underscored: true,
   });
 
-  return { Certificate };
+  /**
+   * A saved second-signatory profile — name, title, department and a
+   * signature image — applied to CARISCA's one fixed certificate design. An
+   * event with no template (or a template with no signature image yet)
+   * renders exactly as before: the background artwork's own baked-in second
+   * signature shows through untouched. `background_file_id`/`orientation`/
+   * `layout` are columns from an earlier, much larger "custom certificate
+   * builder" design that was never built on top of — left unused here.
+   */
+  const CertificateTemplate = sequelize.define('CertificateTemplate', {
+    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+    name: { type: DataTypes.STRING(120), allowNull: false },
+    description: { type: DataTypes.STRING(255) },
+    signatory_name: { type: DataTypes.STRING(160) },
+    signatory_title: { type: DataTypes.STRING(160) },
+    signatory_department: { type: DataTypes.STRING(255) },
+    signature_file_id: { type: DataTypes.BIGINT.UNSIGNED },
+    is_default: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    created_by: { type: DataTypes.BIGINT.UNSIGNED },
+  }, {
+    tableName: 'certificate_templates',
+    timestamps: true,
+    paranoid: true,
+    underscored: true,
+  });
+
+  return { Certificate, CertificateTemplate };
 }

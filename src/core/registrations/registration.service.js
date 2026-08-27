@@ -260,7 +260,7 @@ export async function register({
         attendanceMode,
         amount: price.money,
         holdExpiresAt: registration.hold_expires_at,
-        paymentUrl: isFree ? null : `${env.WEB_URL}/registrations/${registration.reference}/pay`,
+        paymentUrl: isFree ? null : `${env.WEB_URL}/dashboard/registrations/${registration.reference}/pay`,
       },
       resourceType: 'registration',
       resourceId: String(registration.id),
@@ -446,6 +446,76 @@ export async function waive(registrationId, { actor, amount, reason = null, cont
 }
 
 /**
+ * Confirms a registration once its payment has actually arrived — the paid
+ * counterpart to `waive()`'s `shouldConfirm` branch, and deliberately shaped
+ * the same way (same status history entry, same `registration_confirmed`
+ * email, same audit log) so `payment.service.js` never has to duplicate
+ * registration's own transition machinery. Called from both the synchronous
+ * confirmation path (an OTP submit, a card-checkout verify) and the webhook,
+ * so it has to be safe to call on an already-confirmed registration — that
+ * happens whenever both race each other, and is a no-op here rather than an
+ * error.
+ */
+export async function confirmPaidRegistration(registrationId, { context = {} } = {}) {
+  const registration = await Registration.findByPk(registrationId, {
+    include: [{ model: User, as: 'user' }, { model: Event, as: 'event' }],
+  });
+  if (!registration) throw new NotFoundError('Registration');
+
+  const from = registration.status;
+  if (!['PENDING_PAYMENT', 'REQUIRES_REVIEW'].includes(from)) {
+    return registration;
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    await registration.update({
+      status: 'CONFIRMED',
+      hold_expires_at: null,
+      confirmed_at: new Date(),
+    }, { transaction });
+
+    await recordStatus(registration, from, 'CONFIRMED', {
+      reason: 'Payment received', transaction,
+    });
+
+    await audit({
+      action: 'registration.payment_confirmed',
+      resourceType: 'registration',
+      resourceId: registrationId,
+      before: { status: from },
+      after: { status: 'CONFIRMED' },
+      context,
+    }, { transaction });
+  });
+
+  // Outside the transaction, matching how a fresh free registration and a
+  // waiver are both confirmed: an email for a change that then rolls back is
+  // worse than a participant who has to be told a second time.
+  if (registration.user) {
+    await notify({
+      userId: registration.user_id,
+      channel: 'EMAIL',
+      template: 'registration_confirmed',
+      toAddress: registration.user.email,
+      subject: `You're registered: ${registration.event?.title}`,
+      payload: {
+        firstName: registration.user.first_name,
+        eventTitle: registration.event?.title,
+        reference: registration.reference,
+        attendanceMode: registration.attendance_mode,
+      },
+      resourceType: 'registration',
+      resourceId: String(registration.id),
+    }).catch((err) => {
+      logger.error({ err: err.message, registrationId }, 'payment confirmation email failed');
+    });
+  }
+
+  logger.info({ registrationId }, 'registration confirmed by payment');
+  return registration;
+}
+
+/**
  * Moves waitlisted people into a freed seat, oldest first. Runs after any
  * cancellation or expiry rather than on a timer, so the offer goes out while
  * the participant still cares.
@@ -498,7 +568,7 @@ export async function promoteFromWaitlist(eventId, attendanceMode) {
           eventTitle: event.title,
           reference: registration.reference,
           holdExpiresAt: registration.hold_expires_at,
-          paymentUrl: isFree ? null : `${env.WEB_URL}/registrations/${registration.reference}/pay`,
+          paymentUrl: isFree ? null : `${env.WEB_URL}/dashboard/registrations/${registration.reference}/pay`,
         },
         resourceType: 'registration',
         resourceId: String(registration.id),
@@ -601,6 +671,6 @@ export async function findByReference(reference, { withQr = false } = {}) {
 }
 
 export default {
-  register, cancel, waive, promoteFromWaitlist, sweepExpiredHolds,
+  register, cancel, waive, promoteFromWaitlist, sweepExpiredHolds, confirmPaidRegistration,
   findForUser, findByReference,
 };

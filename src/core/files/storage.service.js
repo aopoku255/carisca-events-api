@@ -58,6 +58,13 @@ export const PURPOSES = {
     maxBytes: 10 * 1024 * 1024,
     visibility: 'PRIVATE',
   },
+  // A single signature graphic, not the whole background artwork —
+  // certificate_template above predates the current design.
+  certificate_signature: {
+    mimes: ['image/jpeg', 'image/png'],
+    maxBytes: 2 * 1024 * 1024,
+    visibility: 'PRIVATE',
+  },
   registration_evidence: {
     mimes: ['image/jpeg', 'image/png', 'application/pdf'],
     maxBytes: 8 * 1024 * 1024,
