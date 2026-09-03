@@ -55,7 +55,7 @@ const schema = z.object({
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 
   // --- platform behaviour -------------------------------------------------
-  REGISTRATION_HOLD_MINUTES: z.coerce.number().int().positive().default(30),
+  REGISTRATION_HOLD_MINUTES: z.coerce.number().int().positive().default(2880),
   PERMISSION_CACHE_TTL_SECONDS: z.coerce.number().int().nonnegative().default(60),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
