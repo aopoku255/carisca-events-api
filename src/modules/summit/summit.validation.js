@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sanitizeRichText } from '../../lib/rich-text.js';
 
 const iso = z.union([z.string().datetime({ offset: true }), z.coerce.date()]).transform((v) => new Date(v));
 
@@ -12,7 +13,8 @@ const summitDetail = z.object({
 const eventBody = z.object({
   title: z.string().trim().min(3).max(255),
   shortDescription: z.string().trim().max(500).optional(),
-  description: z.string().trim().max(50_000).optional(),
+  // See cpd.validation.js's identical field for why this is sanitised here.
+  description: z.string().trim().max(50_000).optional().transform((v) => (v ? sanitizeRichText(v) : v)),
   bannerFileId: z.coerce.number().int().positive().nullable().optional(),
   startAt: iso,
   endAt: iso,

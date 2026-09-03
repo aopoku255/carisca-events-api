@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sanitizeRichText } from '../../lib/rich-text.js';
 
 const iso = z.union([z.string().datetime({ offset: true }), z.coerce.date()]).transform((v) => new Date(v));
 
@@ -13,7 +14,11 @@ const cpdDetail = z.object({
 const eventBody = z.object({
   title: z.string().trim().min(3).max(255),
   shortDescription: z.string().trim().max(500).optional(),
-  description: z.string().trim().max(50_000).optional(),
+  // The rich text editor's HTML — sanitised on the way in so nothing renders
+  // it raw again downstream. Kept generous on length: the cap is meant to
+  // stop abuse, not formatting, and markup adds overhead a plain-text limit
+  // wouldn't have to account for.
+  description: z.string().trim().max(50_000).optional().transform((v) => (v ? sanitizeRichText(v) : v)),
   bannerFileId: z.coerce.number().int().positive().nullable().optional(),
   startAt: iso,
   endAt: iso,
