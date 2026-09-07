@@ -11,7 +11,9 @@ import { invalidateUser } from '../rbac/rbac.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { logger } from '../../lib/logger.js';
 
-const { User, Role, UserToken } = models;
+const {
+  User, Role, UserToken, Position, Sector,
+} = models;
 
 const ARGON_OPTIONS = {
   type: argon2.argon2id,
@@ -107,6 +109,106 @@ export async function register(input, context = {}) {
     user,
     // Returned only outside production so the development flow does not depend
     // on a mail server being configured.
+    verificationToken: env.isProduction ? undefined : verificationToken,
+  };
+}
+
+/**
+ * Registers a participant as part of registering for an event, rather than as
+ * its own step — the "guest checkout" path. Unlike `register()`, this also
+ * accepts the profile fields a registration itself needs (organization, job
+ * title, position, sector) so the caller does not have to visit the profile
+ * page first, and it signs the new account straight in: the point is to
+ * remove the sign-in wall, not to replace it with an inbox check.
+ *
+ * A password is optional. Supplied, it works exactly like an ordinary
+ * account from then on. Left out, a random one nobody knows is set instead —
+ * the account still exists and still owns the registration, and the
+ * participant reaches it later with "forgot password" against this email.
+ */
+export async function registerGuest(input, context = {}) {
+  const email = String(input.email).trim().toLowerCase();
+
+  const existing = await User.findOne({ where: { email }, paranoid: false });
+  if (existing) {
+    // Not reused, even if it was itself created this same way: silently
+    // attaching a new registration to an account this caller has not
+    // authenticated as would let anyone register events under a stranger's
+    // name just by knowing their email address.
+    throw new ConflictError(
+      'An account with this email address already exists. Sign in to register.',
+      'EMAIL_HAS_ACCOUNT',
+    );
+  }
+
+  let position = null;
+  if (input.positionKey) {
+    position = await Position.findOne({ where: { key: input.positionKey, is_active: true } });
+    if (!position) throw new ValidationError([{ field: 'positionKey', message: 'Unknown position.' }]);
+  }
+  let sector = null;
+  if (input.sectorKey) {
+    sector = await Sector.findOne({ where: { key: input.sectorKey, is_active: true } });
+    if (!sector) throw new ValidationError([{ field: 'sectorKey', message: 'Unknown sector.' }]);
+  }
+
+  const { user, verificationToken } = await sequelize.transaction(async (transaction) => {
+    const created = await User.create({
+      email,
+      password_hash: await hashPassword(input.password || randomToken(32)),
+      first_name: input.firstName,
+      last_name: input.lastName,
+      phone: input.phone,
+      country_code: input.countryCode,
+      organization: input.organization,
+      job_title: input.jobTitle,
+      position_id: position?.id ?? null,
+      sector_id: sector?.id ?? null,
+      status: 'ACTIVE',
+      is_staff: false,
+    }, { transaction });
+
+    const participantRole = await Role.findOne({ where: { key: 'participant' }, transaction });
+    if (participantRole) {
+      await created.addRole(participantRole, { transaction });
+    }
+
+    const token = await issueUserToken(
+      created.id,
+      'EMAIL_VERIFICATION',
+      env.EMAIL_VERIFICATION_TTL_HOURS * 3600_000,
+      transaction,
+    );
+
+    await notify({
+      userId: created.id,
+      channel: 'EMAIL',
+      template: 'email_verification',
+      toAddress: created.email,
+      subject: 'Confirm your CARISCA account',
+      payload: {
+        firstName: created.first_name,
+        verifyUrl: `${env.WEB_URL}/verify-email?token=${token}`,
+        expiresInHours: env.EMAIL_VERIFICATION_TTL_HOURS,
+      },
+      resourceType: 'user',
+      resourceId: String(created.id),
+    }, { transaction });
+
+    return { user: created, verificationToken: token };
+  });
+
+  logger.info({ userId: user.id, ip: context.ip }, 'guest account created during event registration');
+
+  const { token: refreshToken } = await issueRefreshToken(user, {
+    ip: context.ip,
+    userAgent: context.userAgent,
+  });
+
+  return {
+    user: await User.findByPk(user.id, { include: [{ model: Role, as: 'roles' }] }),
+    accessToken: signAccessToken(user),
+    refreshToken,
     verificationToken: env.isProduction ? undefined : verificationToken,
   };
 }
@@ -292,6 +394,7 @@ export async function changePassword(userId, currentPassword, newPassword) {
 
 export default {
   register,
+  registerGuest,
   login,
   verifyEmail,
   resendVerification,

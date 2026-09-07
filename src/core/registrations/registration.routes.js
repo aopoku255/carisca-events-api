@@ -14,9 +14,12 @@ import { validate } from '../../middleware/validate.js';
 import {
   authenticate, loadPermissions, requirePermission,
 } from '../../middleware/authenticate.js';
+import { registrationLimiter } from '../../middleware/rate-limit.js';
 import { AuthorizationError, NotFoundError } from '../../lib/errors.js';
 import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
 import { record as audit } from '../audit/audit.service.js';
+import * as authService from '../auth/auth.service.js';
+import { serialiseUser } from '../users/user.serialiser.js';
 
 const {
   Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail, Payment,
@@ -38,6 +41,24 @@ const registerSchema = z.object({
   mediaConsent: z.boolean().default(false),
   evidenceFileId: z.coerce.number().int().positive().optional(),
   preferredCurrency: z.string().trim().length(3).toUpperCase().optional(),
+});
+
+/**
+ * Everything registerSchema needs, plus the account details a signed-in
+ * caller would already have on file — this is the whole point of the guest
+ * path, so nothing here is optional the way it might be on a profile edit.
+ */
+const guestRegisterSchema = registerSchema.extend({
+  firstName: z.string().trim().min(1, 'Enter your first name.').max(80),
+  lastName: z.string().trim().min(1, 'Enter your last name.').max(80),
+  email: z.string().trim().min(1, 'Enter your email address.').email('That does not look like an email address.').max(255),
+  password: z.string().min(10, 'Use at least 10 characters.').max(200).optional().or(z.literal('')),
+  phone: z.string().trim().min(1, 'Enter a phone number.').max(32),
+  countryCode: z.string().trim().length(2, 'Select a country.'),
+  organization: z.string().trim().min(1, 'Enter your organization.').max(160),
+  jobTitle: z.string().trim().min(1, 'Enter your job title.').max(160),
+  positionKey: z.string().trim().min(1, 'Select a position.').max(64),
+  sectorKey: z.string().trim().min(1, 'Select a sector.').max(64),
 });
 
 // --- quote -------------------------------------------------------------------
@@ -90,6 +111,14 @@ router.get('/quote',
   });
 
 // --- register ----------------------------------------------------------------
+function registrationMessage(status) {
+  return status === 'CONFIRMED'
+    ? 'You are registered. A confirmation email is on its way.'
+    : status === 'WAITLISTED'
+      ? 'You are on the waitlist. We will email you if a place opens up.'
+      : 'Registration received. Complete payment to secure your place.';
+}
+
 router.post('/',
   authenticate,
   validate({ body: registerSchema }),
@@ -99,12 +128,6 @@ router.post('/',
         ...req.body,
         user: req.user,
       }, { context: contextOf(req) });
-
-      const message = status === 'CONFIRMED'
-        ? 'You are registered. A confirmation email is on its way.'
-        : status === 'WAITLISTED'
-          ? 'You are on the waitlist. We will email you if a place opens up.'
-          : 'Registration received. Complete payment to secure your place.';
 
       const full = await Registration.findByPk(registration.id, {
         include: [{ model: Event, as: 'event' }],
@@ -117,7 +140,58 @@ router.post('/',
           amount: price.money,
           dueBy: registration.hold_expires_at,
         },
-      }, message);
+      }, registrationMessage(status));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * Register without an account. Creates one behind the scenes (so the
+ * profile fields a certificate needs are on file from the start) and signs
+ * the caller straight into it — no email round trip in the way, same as
+ * choosing "guest checkout" anywhere else. An email that already has an
+ * account is refused rather than reused; see registerGuest() for why.
+ */
+router.post('/guest',
+  registrationLimiter,
+  validate({ body: guestRegisterSchema }),
+  async (req, res, next) => {
+    try {
+      const { user, accessToken, refreshToken } = await authService.registerGuest(
+        req.body,
+        contextOf(req),
+      );
+
+      await audit({
+        actor: { id: user.id, email: user.email },
+        action: 'user.registered',
+        resourceType: 'user',
+        resourceId: user.id,
+        after: { email: user.email, isStaff: false, viaGuestRegistration: true },
+        context: contextOf(req),
+      });
+
+      const { registration, price, status } = await registrationService.register({
+        ...req.body,
+        user,
+      }, { context: contextOf(req) });
+
+      const full = await Registration.findByPk(registration.id, {
+        include: [{ model: Event, as: 'event' }],
+      });
+
+      return created(res, {
+        user: serialiseUser(user),
+        accessToken,
+        refreshToken,
+        registration: serialiseRegistration(full),
+        payment: price.amountMinor === 0 ? null : {
+          required: true,
+          amount: price.money,
+          dueBy: registration.hold_expires_at,
+        },
+      }, registrationMessage(status));
     } catch (err) {
       return next(err);
     }
