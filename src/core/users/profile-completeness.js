@@ -10,6 +10,7 @@
 export const REQUIRED_PROFILE_FIELDS = [
   { key: 'phone', label: 'Phone number' },
   { key: 'country_code', label: 'Country' },
+  { key: 'gender', label: 'Gender' },
   { key: 'organization', label: 'Organization' },
   { key: 'job_title', label: 'Job title' },
   { key: 'position_id', label: 'Position' },

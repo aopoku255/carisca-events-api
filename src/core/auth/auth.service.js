@@ -160,6 +160,7 @@ export async function registerGuest(input, context = {}) {
       last_name: input.lastName,
       phone: input.phone,
       country_code: input.countryCode,
+      gender: input.gender,
       organization: input.organization,
       job_title: input.jobTitle,
       position_id: position?.id ?? null,

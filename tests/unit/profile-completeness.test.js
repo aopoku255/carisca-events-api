@@ -3,6 +3,7 @@ import { missingProfileFields, isProfileComplete } from '../../src/core/users/pr
 const complete = {
   phone: '+233555000111',
   country_code: 'GH',
+  gender: 'Female',
   organization: 'KNUST',
   job_title: 'Lecturer',
   position_id: 1,

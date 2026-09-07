@@ -63,10 +63,10 @@ export const TEST_PASSWORD = 'correct-horse-battery-staple';
 
 /**
  * Creates a user, optionally staff, optionally holding a role. Defaults to a
- * complete profile — phone/country/organization/jobTitle/position/sector all
- * set — since registering for an event now requires one; pass any of those
- * as `null` explicitly to get an incomplete profile for testing that gate
- * itself.
+ * complete profile — phone/country/gender/organization/jobTitle/position/
+ * sector all set — since registering for an event now requires one; pass
+ * any of those as `null` explicitly to get an incomplete profile for
+ * testing that gate itself.
  */
 export async function makeUser({
   email,
@@ -77,6 +77,7 @@ export async function makeUser({
   lastName = 'User',
   phone = '+233555000111',
   countryCode = 'GH',
+  gender = 'Prefer not to say',
   organization = 'Test Organization',
   jobTitle = 'Test Role',
   positionId,
@@ -100,6 +101,7 @@ export async function makeUser({
     email_verified_at: new Date(),
     phone,
     country_code: countryCode,
+    gender,
     organization,
     job_title: jobTitle,
     position_id: positionId,

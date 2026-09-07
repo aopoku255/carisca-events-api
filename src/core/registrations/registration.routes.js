@@ -55,6 +55,7 @@ const guestRegisterSchema = registerSchema.extend({
   password: z.string().min(10, 'Use at least 10 characters.').max(200).optional().or(z.literal('')),
   phone: z.string().trim().min(1, 'Enter a phone number.').max(32),
   countryCode: z.string().trim().length(2, 'Select a country.'),
+  gender: z.string().trim().min(1, 'Select a gender.').max(32),
   organization: z.string().trim().min(1, 'Enter your organization.').max(160),
   jobTitle: z.string().trim().min(1, 'Enter your job title.').max(160),
   positionKey: z.string().trim().min(1, 'Select a position.').max(64),

@@ -57,6 +57,7 @@ function guestPayload(overrides = {}) {
     email: email(),
     phone: '+233555000222',
     countryCode: 'GH',
+    gender: 'Prefer not to say',
     organization: 'Guest Org',
     jobTitle: 'Guest Role',
     positionKey: 'other_supply_chain',
@@ -84,6 +85,7 @@ describe('registering as a guest', () => {
     expect(user).not.toBeNull();
     expect(user.organization).toBe('Guest Org');
     expect(user.phone).toBe('+233555000222');
+    expect(user.gender).toBe('Prefer not to say');
 
     const roles = await user.getRoles();
     expect(roles.map((r) => r.key)).toContain('participant');
@@ -135,6 +137,17 @@ describe('registering as a guest', () => {
 
     const user = await User.findOne({ where: { email: payload.email } });
     expect(user).toBeNull();
+  });
+
+  test('gender is required too, not just the rest of the profile', async () => {
+    const event = await makeEvent({ amountMinor: 0 });
+    const payload = guestPayload({ eventId: Number(event.id) });
+    delete payload.gender;
+
+    const res = await request(server).post('/api/v1/registrations/guest').send(payload);
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.details.some((d) => d.field === 'gender')).toBe(true);
   });
 
   test('a supplied password can sign in afterwards; an omitted one still creates a usable account', async () => {
