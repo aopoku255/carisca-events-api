@@ -16,6 +16,7 @@ const initiateMobileMoneyChargeMock = jest.fn();
 const submitOtpMock = jest.fn();
 const submitPinMock = jest.fn();
 const checkPendingChargeMock = jest.fn();
+const createCheckoutMock = jest.fn();
 const createVirtualAccountMock = jest.fn();
 const getPaymentMock = jest.fn();
 const verifyOgatewaySignatureMock = jest.fn();
@@ -32,6 +33,7 @@ jest.unstable_mockModule('../../src/core/payments/paystack.client.js', () => ({
 }));
 
 jest.unstable_mockModule('../../src/core/payments/ogateway.client.js', () => ({
+  createCheckout: createCheckoutMock,
   createVirtualAccount: createVirtualAccountMock,
   getPayment: getPaymentMock,
   verifyOgatewaySignature: verifyOgatewaySignatureMock,
@@ -314,14 +316,14 @@ describe('paying by mobile money (KES, M-Pesa)', () => {
     expect(res.status).toBe(422);
   });
 
-  test('bank transfer and card are both refused for a KES-priced registration', async () => {
+  test('OGateway checkout and card are both refused for a KES-priced registration', async () => {
     const event = await makeEvent({ amountMinor: 250000, currency: 'KES' });
     const user = await participant();
     const reference = await pendingRegistration(event, user);
 
     const bank = await request(server).post('/api/v1/payments/initiate')
       .set(authHeader(user))
-      .send({ registrationReference: reference, channel: 'bank_transfer' });
+      .send({ registrationReference: reference, channel: 'checkout' });
     expect(bank.status).toBe(409);
 
     const card = await request(server).post('/api/v1/payments/initiate')
@@ -330,14 +332,9 @@ describe('paying by mobile money (KES, M-Pesa)', () => {
   });
 });
 
-describe('paying by bank transfer (NGN, OGateway)', () => {
-  // provider_reference is unique, so each initiate needs its own OGateway id.
+describe('paying on OGateway checkout (NGN)', () => {
+  // provider_reference is unique, so each initiate needs its own session id.
   let ogSeq = 0;
-  let currentOgId;
-  const virtualAccountFor = (id) => ({
-    id,
-    virtual_account: { bank_name: 'Wema Bank', account_name: 'CARISCA / Test User', account_number: '7300012345' },
-  });
 
   async function initiateNgn({ amountMinor = 800000 } = {}) {
     const event = await makeEvent({ amountMinor, currency: 'NGN' });
@@ -345,38 +342,36 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
     const reference = await pendingRegistration(event, user);
 
     ogSeq += 1;
-    currentOgId = `og-txn-${ogSeq}`;
-    createVirtualAccountMock.mockResolvedValue(virtualAccountFor(currentOgId));
+    const ogId = `og-session-${Date.now()}-${ogSeq}`;
+    createCheckoutMock.mockResolvedValue({ id: ogId, checkout_url: `https://ogateway.io/checkout/${ogId}` });
     const initiate = await request(server).post('/api/v1/payments/initiate')
-      .set(authHeader(user)).send({ registrationReference: reference, channel: 'bank_transfer' });
+      .set(authHeader(user)).send({ registrationReference: reference, channel: 'checkout' });
 
     return {
-      user, reference, initiate, paymentReference: initiate.body.data?.reference, ogId: currentOgId,
+      user, reference, initiate, paymentReference: initiate.body.data?.reference, ogId,
     };
   }
 
-  const webhook = (paymentReference, overrides = {}) => request(server)
+  // OGateway's callback `id` is the checkout session id; its reference_business
+  // is its own generated value, not ours.
+  const webhook = (ogId, overrides = {}) => request(server)
     .post('/api/v1/webhooks/ogateway')
     .set('Content-Type', 'application/json')
     .send(JSON.stringify({
-      id: 'og-webhook-id',
+      id: ogId,
       status: 'COMPLETED',
       amount: '8000',
       currency: 'NGN',
-      reference_business: paymentReference,
+      reference_business: 'checkout_generated_by_ogateway',
       ...overrides,
     }));
 
-  test('initiating returns the account to pay into, in major units', async () => {
+  test('initiating returns the hosted checkout URL, in major units', async () => {
     const { initiate, paymentReference, ogId } = await initiateNgn();
 
     expect(initiate.status).toBe(201);
-    expect(initiate.body.data.virtualAccount).toEqual({
-      bankName: 'Wema Bank', accountName: 'CARISCA / Test User', accountNumber: '7300012345',
-    });
-    expect(createVirtualAccountMock).toHaveBeenCalledWith(expect.objectContaining({
-      amount: 8000, currency: 'NGN', reference: paymentReference,
-    }));
+    expect(initiate.body.data.checkoutUrl).toBe(`https://ogateway.io/checkout/${ogId}`);
+    expect(createCheckoutMock).toHaveBeenCalledWith({ amount: 8000, currency: 'NGN' });
 
     const payment = await Payment.findOne({ where: { reference: paymentReference } });
     expect(payment.provider).toBe('ogateway');
@@ -384,10 +379,10 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
   });
 
   test('a signed COMPLETED callback confirms the registration', async () => {
-    const { reference, paymentReference } = await initiateNgn();
+    const { reference, paymentReference, ogId } = await initiateNgn();
     verifyOgatewaySignatureMock.mockReturnValue(true);
 
-    const res = await webhook(paymentReference, { id: `og-ok-${Date.now()}` });
+    const res = await webhook(ogId);
     expect(res.status).toBe(200);
 
     const registration = await Registration.findOne({ where: { reference } });
@@ -397,38 +392,38 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
   });
 
   test('a callback with a bad signature confirms nothing', async () => {
-    const { reference, paymentReference } = await initiateNgn();
+    const { reference, ogId } = await initiateNgn();
     verifyOgatewaySignatureMock.mockReturnValue(false);
 
-    await webhook(paymentReference, { id: 'og-unsigned-id' });
+    await webhook(ogId);
 
     const registration = await Registration.findOne({ where: { reference } });
     expect(registration.status).toBe('PENDING_PAYMENT');
-    const event = await PaymentEvent.findOne({ where: { provider_event_id: 'og-unsigned-id:COMPLETED' } });
+    const event = await PaymentEvent.findOne({ where: { provider_event_id: `${ogId}:COMPLETED` } });
     expect(event.signature_valid).toBe(false);
   });
 
-  test('a transfer for less than the amount due does not confirm the registration', async () => {
-    const { reference, paymentReference } = await initiateNgn();
+  test('a payment for less than the amount due does not confirm the registration', async () => {
+    const { reference, ogId } = await initiateNgn();
     verifyOgatewaySignatureMock.mockReturnValue(true);
 
-    await webhook(paymentReference, { id: 'og-short-id', amount: '5000' });
+    await webhook(ogId, { amount: '5000' });
 
     const registration = await Registration.findOne({ where: { reference } });
     expect(registration.status).toBe('PENDING_PAYMENT');
   });
 
   test('a replayed callback is deduplicated', async () => {
-    const { paymentReference } = await initiateNgn();
+    const { ogId } = await initiateNgn();
     verifyOgatewaySignatureMock.mockReturnValue(true);
 
-    await webhook(paymentReference, { id: 'og-txn-replay' });
-    await webhook(paymentReference, { id: 'og-txn-replay' });
+    await webhook(ogId);
+    await webhook(ogId);
 
-    expect(await PaymentEvent.count({ where: { provider_event_id: 'og-txn-replay:COMPLETED' } })).toBe(1);
+    expect(await PaymentEvent.count({ where: { provider_event_id: `${ogId}:COMPLETED` } })).toBe(1);
   });
 
-  test('polling a pending transfer asks OGateway and confirms once completed', async () => {
+  test('polling a pending checkout asks OGateway and confirms once completed', async () => {
     const { user, reference, paymentReference, ogId } = await initiateNgn();
 
     getPaymentMock.mockResolvedValue({ status: 'COMPLETED', amount: '8000', currency: 'NGN' });
@@ -440,11 +435,23 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
     expect(registration.status).toBe('CONFIRMED');
   });
 
+  test('a checkout nobody has started paying on yet stays pending', async () => {
+    const { user, reference, paymentReference } = await initiateNgn();
+
+    getPaymentMock.mockResolvedValue(null);
+    const res = await request(server).get(`/api/v1/payments/${paymentReference}`).set(authHeader(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('PROCESSING');
+    const registration = await Registration.findOne({ where: { reference } });
+    expect(registration.status).toBe('PENDING_PAYMENT');
+  });
+
   test('a FAILED callback fails the payment but keeps the registration payable', async () => {
-    const { reference, paymentReference } = await initiateNgn();
+    const { reference, paymentReference, ogId } = await initiateNgn();
     verifyOgatewaySignatureMock.mockReturnValue(true);
 
-    await webhook(paymentReference, { id: 'og-failed-id', status: 'FAILED', provider_message: 'Expired' });
+    await webhook(ogId, { status: 'FAILED', provider_message: 'Expired' });
 
     const payment = await Payment.findOne({ where: { reference: paymentReference } });
     expect(payment.status).toBe('FAILED');
@@ -467,6 +474,79 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
     expect(card.status).toBe(409);
   });
 
+  test('OGateway checkout is refused for a GHS-priced registration', async () => {
+    const event = await makeEvent({ amountMinor: 15000, currency: 'GHS' });
+    const user = await participant();
+    const reference = await pendingRegistration(event, user);
+
+    const res = await request(server).post('/api/v1/payments/initiate')
+      .set(authHeader(user)).send({ registrationReference: reference, channel: 'checkout' });
+
+    expect(res.status).toBe(409);
+    expect(createCheckoutMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('paying by bank transfer (NGN, OGateway virtual account)', () => {
+  let seq2 = 0;
+
+  async function initiateTransfer() {
+    const event = await makeEvent({ amountMinor: 800000, currency: 'NGN' });
+    const user = await participant();
+    const reference = await pendingRegistration(event, user);
+
+    seq2 += 1;
+    const ogId = `og-va-${Date.now()}-${seq2}`;
+    createVirtualAccountMock.mockResolvedValue({
+      id: ogId,
+      virtual_account: { bank_name: 'Wema Bank', account_name: 'CARISCA / Test User', account_number: '7300012345' },
+    });
+    const initiate = await request(server).post('/api/v1/payments/initiate')
+      .set(authHeader(user)).send({ registrationReference: reference, channel: 'bank_transfer' });
+
+    return {
+      user, reference, initiate, paymentReference: initiate.body.data?.reference, ogId,
+    };
+  }
+
+  test('initiating returns the account to pay into, in major units', async () => {
+    const { initiate, paymentReference, ogId } = await initiateTransfer();
+
+    expect(initiate.status).toBe(201);
+    expect(initiate.body.data.virtualAccount).toEqual({
+      bankName: 'Wema Bank', accountName: 'CARISCA / Test User', accountNumber: '7300012345',
+    });
+    expect(createVirtualAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 8000, currency: 'NGN', reference: paymentReference,
+    }));
+
+    const payment = await Payment.findOne({ where: { reference: paymentReference } });
+    expect(payment.provider).toBe('ogateway');
+    expect(payment.provider_reference).toBe(ogId);
+  });
+
+  test('a signed COMPLETED callback for the transfer confirms the registration', async () => {
+    const { reference, ogId } = await initiateTransfer();
+    verifyOgatewaySignatureMock.mockReturnValue(true);
+
+    await request(server).post('/api/v1/webhooks/ogateway')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ id: ogId, status: 'COMPLETED', amount: '8000', currency: 'NGN' }));
+
+    const registration = await Registration.findOne({ where: { reference } });
+    expect(registration.status).toBe('CONFIRMED');
+  });
+
+  test('polling returns the account details so a reload can show them again', async () => {
+    const { user, paymentReference } = await initiateTransfer();
+
+    getPaymentMock.mockResolvedValue({ status: 'INITIATED', amount: '8000', currency: 'NGN' });
+    const res = await request(server).get(`/api/v1/payments/${paymentReference}`).set(authHeader(user));
+
+    expect(res.body.data.status).toBe('PROCESSING');
+    expect(res.body.data.virtualAccount.accountNumber).toBe('7300012345');
+  });
+
   test('bank transfer is refused for a GHS-priced registration', async () => {
     const event = await makeEvent({ amountMinor: 15000, currency: 'GHS' });
     const user = await participant();
@@ -476,7 +556,6 @@ describe('paying by bank transfer (NGN, OGateway)', () => {
       .set(authHeader(user)).send({ registrationReference: reference, channel: 'bank_transfer' });
 
     expect(res.status).toBe(409);
-    expect(createVirtualAccountMock).not.toHaveBeenCalled();
   });
 });
 

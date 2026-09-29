@@ -62,7 +62,7 @@ const schema = z.object({
   // --- providers (optional until the module that needs them is switched on) -
   PAYSTACK_SECRET_KEY: z.string().optional(),
   PAYSTACK_PUBLIC_KEY: z.string().optional(),
-  // OGateway collects Nigerian (NGN) bank transfers; Paystack handles the rest.
+  // OGateway collects Nigerian (NGN) payments via its hosted checkout; Paystack handles the rest.
   OGATEWAY_API_KEY: z.string().optional(),
   OGATEWAY_WEBHOOK_SECRET: z.string().optional(),
   // Bank code the temporary virtual account is generated at (322 = Premium Trust Bank, per OGateway support).

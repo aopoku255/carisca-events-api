@@ -42,7 +42,7 @@ router.post('/initiate',
   validate({
     body: z.object({
       registrationReference: z.string().trim().min(1).max(48),
-      channel: z.enum(['mobile_money', 'bank_transfer', 'card']),
+      channel: z.enum(['mobile_money', 'checkout', 'bank_transfer', 'card']),
       mobileMoney: z.object({
         phone: z.string().trim().min(6).max(20),
         provider: z.enum(['mtn', 'atl', 'vod', 'mpesa']),
@@ -102,7 +102,7 @@ router.post('/:reference/submit-pin',
 /**
  * Reads current status — and, for a payment still awaiting a verdict on a
  * channel that settles asynchronously (card checkout's redirect, M-Pesa's
- * STK push, a Nigerian bank transfer), checks with Paystack first. This is
+ * STK push, an OGateway checkout), checks with Paystack first. This is
  * what both the card checkout-return page and the pay page's "waiting"
  * screen poll. Ghana mobile money is the one channel that's never checked
  * here: its own submit-otp/submit-pin response, the webhook, and the
@@ -118,7 +118,7 @@ router.get('/:reference',
       const channel = payment.provider_metadata?.channel;
 
       if (['PENDING', 'PROCESSING'].includes(payment.status)
-          && (channel === 'card' || channel === 'bank_transfer'
+          && (channel === 'card' || channel === 'checkout' || channel === 'bank_transfer'
               || (channel === 'mobile_money' && payment.provider_metadata?.paystackStatus === 'pending'))) {
         payment = await paymentService.verifyPayment(payment.reference);
       }
@@ -128,8 +128,8 @@ router.get('/:reference',
         status: payment.status,
         amount: serialiseMoney(payment.amount_minor, payment.currency),
         checkoutUrl: payment.checkout_url,
-        failureReason: payment.failure_reason,
         virtualAccount: payment.provider_metadata?.virtualAccount ?? null,
+        failureReason: payment.failure_reason,
       });
     } catch (err) {
       return next(err);

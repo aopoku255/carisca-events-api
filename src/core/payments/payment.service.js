@@ -21,11 +21,12 @@ const {
  * transaction currency/market, not a raw country field, so this is the single
  * source of truth both `initiatePayment` and the frontend's channel picker
  * key off of. Ghana and Kenya use Paystack's mobile-money Charge API; Nigeria
- * (NGN) is paid by bank transfer into an OGateway virtual account; everything
+ * (NGN) is paid through OGateway — either its hosted checkout page or a bank
+ * transfer into a temporary virtual account, the participant's choice; everything
  * else is Paystack card checkout.
  */
 const MOBILE_MONEY_CURRENCIES = new Set(['GHS', 'KES']);
-const BANK_TRANSFER_CURRENCIES = new Set(['NGN']);
+const CHECKOUT_CURRENCIES = new Set(['NGN']);
 const MOBILE_MONEY_PROVIDERS = { GHS: ['mtn', 'atl', 'vod'], KES: ['mpesa'] };
 
 function callbackUrlFor(registration) {
@@ -63,6 +64,7 @@ function normaliseOgatewayStatus(payment, data) {
 async function checkChargeStatus(payment) {
   if (payment.provider === 'ogateway') {
     const data = await ogateway.getPayment(payment.provider_metadata?.ogatewayId);
+    if (!data) return { status: 'pending', gateway_response: null };
     const verdict = normaliseOgatewayStatus(payment, data);
     return { status: verdict.status, gateway_response: verdict.message };
   }
@@ -154,15 +156,15 @@ export async function initiatePayment(registration, { channel, mobileMoney } = {
 
   const { currency } = registration;
   const isMobileMoney = MOBILE_MONEY_CURRENCIES.has(currency);
-  const isBankTransfer = BANK_TRANSFER_CURRENCIES.has(currency);
+  const isOgatewayCheckout = CHECKOUT_CURRENCIES.has(currency);
 
   if (channel === 'mobile_money' && !isMobileMoney) {
     throw new ConflictError(`Mobile money is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
   }
-  if (channel === 'bank_transfer' && !isBankTransfer) {
-    throw new ConflictError(`Bank transfer is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
+  if (['checkout', 'bank_transfer'].includes(channel) && !isOgatewayCheckout) {
+    throw new ConflictError(`${channel === 'checkout' ? 'Online checkout' : 'Bank transfer'} is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
   }
-  if (channel === 'card' && (isMobileMoney || isBankTransfer)) {
+  if (channel === 'card' && (isMobileMoney || isOgatewayCheckout)) {
     throw new ConflictError(`A ${currency} registration is not paid by card.`, 'CHANNEL_UNAVAILABLE');
   }
   if (channel === 'mobile_money') {
@@ -184,7 +186,7 @@ export async function initiatePayment(registration, { channel, mobileMoney } = {
     event_id: registration.event_id,
     user_id: registration.user_id,
     reference: paymentReference(),
-    provider: channel === 'bank_transfer' ? 'ogateway' : 'paystack',
+    provider: ['checkout', 'bank_transfer'].includes(channel) ? 'ogateway' : 'paystack',
     amount_minor: registration.price_amount_minor,
     currency: registration.currency,
     status: 'PROCESSING',
@@ -239,7 +241,7 @@ export async function initiatePayment(registration, { channel, mobileMoney } = {
         accountName: data.virtual_account?.account_name ?? null,
         accountNumber: data.virtual_account?.account_number ?? null,
       };
-      if (!virtualAccount.accountNumber) {
+      if (!data?.id || !virtualAccount.accountNumber) {
         throw new AppError('The payment provider did not return an account to pay into.', {
           status: 502, code: 'OGATEWAY_NO_ACCOUNT',
         });
@@ -251,6 +253,27 @@ export async function initiatePayment(registration, { channel, mobileMoney } = {
       });
 
       return { payment, status: 'pending_transfer', virtualAccount };
+    }
+
+    if (channel === 'checkout') {
+      const data = await ogateway.createCheckout({
+        amount: Number(fromMinor(registration.price_amount_minor, registration.currency)),
+        currency: registration.currency,
+      });
+
+      if (!data?.checkout_url || !data?.id) {
+        throw new AppError('The payment provider did not return a payment page.', {
+          status: 502, code: 'OGATEWAY_NO_CHECKOUT',
+        });
+      }
+
+      await payment.update({
+        provider_reference: String(data.id),
+        checkout_url: data.checkout_url,
+        provider_metadata: { channel: 'checkout', ogatewayId: String(data.id) },
+      });
+
+      return { payment, checkoutUrl: data.checkout_url };
     }
 
     const data = await paystack.initializeTransaction({
@@ -383,8 +406,8 @@ export async function processWebhookEvent({
  * only the transaction's own `id` and `status`, so `id:status` is the dedupe
  * key — a replay of the same outcome fails the unique insert and is skipped,
  * while COMPLETED arriving after an earlier FAILED for the same id is still
- * processed. The payment is found by `reference_business`, the reference we
- * sent when creating the virtual account.
+ * processed. The payment is found by that `id`, which is the checkout
+ * session id stored as `provider_reference`.
  */
 export async function processOgatewayWebhook({ payload, signatureValid }) {
   let paymentEvent;
@@ -408,8 +431,10 @@ export async function processOgatewayWebhook({ payload, signatureValid }) {
   }
 
   try {
-    const payment = payload?.reference_business
-      ? await Payment.findOne({ where: { reference: payload.reference_business, provider: 'ogateway' } })
+    // The OGateway id we stored when creating the checkout session or virtual
+    // account (the callback reports the same id either way).
+    const payment = payload?.id
+      ? await Payment.findOne({ where: { provider_reference: String(payload.id), provider: 'ogateway' } })
       : null;
 
     if (payment) {
