@@ -62,6 +62,14 @@ const schema = z.object({
   // --- providers (optional until the module that needs them is switched on) -
   PAYSTACK_SECRET_KEY: z.string().optional(),
   PAYSTACK_PUBLIC_KEY: z.string().optional(),
+  // OGateway collects Nigerian (NGN) bank transfers; Paystack handles the rest.
+  OGATEWAY_API_KEY: z.string().optional(),
+  OGATEWAY_WEBHOOK_SECRET: z.string().optional(),
+  // Bank code the temporary virtual account is generated at (322 = Premium Trust Bank, per OGateway support).
+  OGATEWAY_VA_NETWORK: z.string().default('322'),
+  // Only needed to override the callback URL saved in the OGateway dashboard.
+  // Compose passes an unset variable through as '', which is not a URL.
+  OGATEWAY_CALLBACK_URL: z.string().url().or(z.literal('')).transform((v) => v || undefined).optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 

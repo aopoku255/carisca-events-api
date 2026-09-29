@@ -13,25 +13,28 @@ import { jest } from '@jest/globals';
 const initializeTransactionMock = jest.fn();
 const verifyTransactionMock = jest.fn();
 const initiateMobileMoneyChargeMock = jest.fn();
-const initiateBankChargeMock = jest.fn();
 const submitOtpMock = jest.fn();
 const submitPinMock = jest.fn();
-const submitBirthdayMock = jest.fn();
 const checkPendingChargeMock = jest.fn();
-const listBanksMock = jest.fn();
+const createVirtualAccountMock = jest.fn();
+const getPaymentMock = jest.fn();
+const verifyOgatewaySignatureMock = jest.fn();
 const verifyPaystackSignatureMock = jest.fn();
 
 jest.unstable_mockModule('../../src/core/payments/paystack.client.js', () => ({
   initializeTransaction: initializeTransactionMock,
   verifyTransaction: verifyTransactionMock,
   initiateMobileMoneyCharge: initiateMobileMoneyChargeMock,
-  initiateBankCharge: initiateBankChargeMock,
   submitOtp: submitOtpMock,
   submitPin: submitPinMock,
-  submitBirthday: submitBirthdayMock,
   checkPendingCharge: checkPendingChargeMock,
-  listBanks: listBanksMock,
   verifyPaystackSignature: verifyPaystackSignatureMock,
+}));
+
+jest.unstable_mockModule('../../src/core/payments/ogateway.client.js', () => ({
+  createVirtualAccount: createVirtualAccountMock,
+  getPayment: getPaymentMock,
+  verifyOgatewaySignature: verifyOgatewaySignatureMock,
 }));
 
 // Imported after the mock is registered, or the real module (and its
@@ -43,7 +46,7 @@ const {
 jest.setTimeout(120_000);
 
 const {
-  Event, EventType, EventPrice, Registration, Payment,
+  Event, EventType, EventPrice, Registration, Payment, PaymentEvent,
 } = models;
 
 let server;
@@ -311,14 +314,14 @@ describe('paying by mobile money (KES, M-Pesa)', () => {
     expect(res.status).toBe(422);
   });
 
-  test('bank and card are both refused for a KES-priced registration', async () => {
+  test('bank transfer and card are both refused for a KES-priced registration', async () => {
     const event = await makeEvent({ amountMinor: 250000, currency: 'KES' });
     const user = await participant();
     const reference = await pendingRegistration(event, user);
 
     const bank = await request(server).post('/api/v1/payments/initiate')
       .set(authHeader(user))
-      .send({ registrationReference: reference, channel: 'bank', bank: { code: '057', accountNumber: '0000000000' } });
+      .send({ registrationReference: reference, channel: 'bank_transfer' });
     expect(bank.status).toBe(409);
 
     const card = await request(server).post('/api/v1/payments/initiate')
@@ -327,57 +330,126 @@ describe('paying by mobile money (KES, M-Pesa)', () => {
   });
 });
 
-describe('paying by bank (NGN, Pay with Bank)', () => {
-  test('a birthday challenge, then an OTP, confirms the registration', async () => {
-    const event = await makeEvent({ amountMinor: 800000, currency: 'NGN' });
+describe('paying by bank transfer (NGN, OGateway)', () => {
+  // provider_reference is unique, so each initiate needs its own OGateway id.
+  let ogSeq = 0;
+  let currentOgId;
+  const virtualAccountFor = (id) => ({
+    id,
+    virtual_account: { bank_name: 'Wema Bank', account_name: 'CARISCA / Test User', account_number: '7300012345' },
+  });
+
+  async function initiateNgn({ amountMinor = 800000 } = {}) {
+    const event = await makeEvent({ amountMinor, currency: 'NGN' });
     const user = await participant();
     const reference = await pendingRegistration(event, user);
 
-    initiateBankChargeMock.mockResolvedValue({ status: 'send_birthday' });
+    ogSeq += 1;
+    currentOgId = `og-txn-${ogSeq}`;
+    createVirtualAccountMock.mockResolvedValue(virtualAccountFor(currentOgId));
     const initiate = await request(server).post('/api/v1/payments/initiate')
-      .set(authHeader(user))
-      .send({ registrationReference: reference, channel: 'bank', bank: { code: '057', accountNumber: '0000000000' } });
+      .set(authHeader(user)).send({ registrationReference: reference, channel: 'bank_transfer' });
+
+    return {
+      user, reference, initiate, paymentReference: initiate.body.data?.reference, ogId: currentOgId,
+    };
+  }
+
+  const webhook = (paymentReference, overrides = {}) => request(server)
+    .post('/api/v1/webhooks/ogateway')
+    .set('Content-Type', 'application/json')
+    .send(JSON.stringify({
+      id: 'og-webhook-id',
+      status: 'COMPLETED',
+      amount: '8000',
+      currency: 'NGN',
+      reference_business: paymentReference,
+      ...overrides,
+    }));
+
+  test('initiating returns the account to pay into, in major units', async () => {
+    const { initiate, paymentReference, ogId } = await initiateNgn();
 
     expect(initiate.status).toBe(201);
-    expect(initiate.body.data.status).toBe('send_birthday');
-    const paymentReference = initiate.body.data.reference;
+    expect(initiate.body.data.virtualAccount).toEqual({
+      bankName: 'Wema Bank', accountName: 'CARISCA / Test User', accountNumber: '7300012345',
+    });
+    expect(createVirtualAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 8000, currency: 'NGN', reference: paymentReference,
+    }));
 
-    submitBirthdayMock.mockResolvedValue({ status: 'send_otp' });
-    const birthday = await request(server).post(`/api/v1/payments/${paymentReference}/submit-birthday`)
-      .set(authHeader(user)).send({ birthday: '1990-05-14' });
-    expect(birthday.body.data.status).toBe('send_otp');
-    expect(submitBirthdayMock).toHaveBeenCalledWith({ reference: paymentReference, birthday: '1990-05-14' });
+    const payment = await Payment.findOne({ where: { reference: paymentReference } });
+    expect(payment.provider).toBe('ogateway');
+    expect(payment.provider_reference).toBe(ogId);
+  });
 
-    submitOtpMock.mockResolvedValue({ status: 'success' });
-    const otp = await request(server).post(`/api/v1/payments/${paymentReference}/submit-otp`)
-      .set(authHeader(user)).send({ otp: '123456' });
-    expect(otp.body.data.status).toBe('success');
+  test('a signed COMPLETED callback confirms the registration', async () => {
+    const { reference, paymentReference } = await initiateNgn();
+    verifyOgatewaySignatureMock.mockReturnValue(true);
 
+    const res = await webhook(paymentReference, { id: `og-ok-${Date.now()}` });
+    expect(res.status).toBe(200);
+
+    const registration = await Registration.findOne({ where: { reference } });
+    expect(registration.status).toBe('CONFIRMED');
+    const payment = await Payment.findOne({ where: { reference: paymentReference } });
+    expect(payment.status).toBe('SUCCESSFUL');
+  });
+
+  test('a callback with a bad signature confirms nothing', async () => {
+    const { reference, paymentReference } = await initiateNgn();
+    verifyOgatewaySignatureMock.mockReturnValue(false);
+
+    await webhook(paymentReference, { id: 'og-unsigned-id' });
+
+    const registration = await Registration.findOne({ where: { reference } });
+    expect(registration.status).toBe('PENDING_PAYMENT');
+    const event = await PaymentEvent.findOne({ where: { provider_event_id: 'og-unsigned-id:COMPLETED' } });
+    expect(event.signature_valid).toBe(false);
+  });
+
+  test('a transfer for less than the amount due does not confirm the registration', async () => {
+    const { reference, paymentReference } = await initiateNgn();
+    verifyOgatewaySignatureMock.mockReturnValue(true);
+
+    await webhook(paymentReference, { id: 'og-short-id', amount: '5000' });
+
+    const registration = await Registration.findOne({ where: { reference } });
+    expect(registration.status).toBe('PENDING_PAYMENT');
+  });
+
+  test('a replayed callback is deduplicated', async () => {
+    const { paymentReference } = await initiateNgn();
+    verifyOgatewaySignatureMock.mockReturnValue(true);
+
+    await webhook(paymentReference, { id: 'og-txn-replay' });
+    await webhook(paymentReference, { id: 'og-txn-replay' });
+
+    expect(await PaymentEvent.count({ where: { provider_event_id: 'og-txn-replay:COMPLETED' } })).toBe(1);
+  });
+
+  test('polling a pending transfer asks OGateway and confirms once completed', async () => {
+    const { user, reference, paymentReference, ogId } = await initiateNgn();
+
+    getPaymentMock.mockResolvedValue({ status: 'COMPLETED', amount: '8000', currency: 'NGN' });
+    const res = await request(server).get(`/api/v1/payments/${paymentReference}`).set(authHeader(user));
+
+    expect(getPaymentMock).toHaveBeenCalledWith(ogId);
+    expect(res.body.data.status).toBe('SUCCESSFUL');
     const registration = await Registration.findOne({ where: { reference } });
     expect(registration.status).toBe('CONFIRMED');
   });
 
-  // Paystack's own ordering of birthday vs OTP isn't documented anywhere
-  // reachable — this proves the same code path confirms a registration when
-  // no birthday is ever asked for, i.e. nothing here assumes a fixed order.
-  test('no birthday challenge at all still confirms the registration', async () => {
-    const event = await makeEvent({ amountMinor: 800000, currency: 'NGN' });
-    const user = await participant();
-    const reference = await pendingRegistration(event, user);
+  test('a FAILED callback fails the payment but keeps the registration payable', async () => {
+    const { reference, paymentReference } = await initiateNgn();
+    verifyOgatewaySignatureMock.mockReturnValue(true);
 
-    initiateBankChargeMock.mockResolvedValue({ status: 'send_otp' });
-    const initiate = await request(server).post('/api/v1/payments/initiate')
-      .set(authHeader(user))
-      .send({ registrationReference: reference, channel: 'bank', bank: { code: '057', accountNumber: '0000000000' } });
-    const paymentReference = initiate.body.data.reference;
+    await webhook(paymentReference, { id: 'og-failed-id', status: 'FAILED', provider_message: 'Expired' });
 
-    submitOtpMock.mockResolvedValue({ status: 'success' });
-    const otp = await request(server).post(`/api/v1/payments/${paymentReference}/submit-otp`)
-      .set(authHeader(user)).send({ otp: '123456' });
-    expect(otp.body.data.status).toBe('success');
-
+    const payment = await Payment.findOne({ where: { reference: paymentReference } });
+    expect(payment.status).toBe('FAILED');
     const registration = await Registration.findOne({ where: { reference } });
-    expect(registration.status).toBe('CONFIRMED');
+    expect(registration.status).toBe('PENDING_PAYMENT');
   });
 
   test('mobile money and card are both refused for an NGN-priced registration', async () => {
@@ -395,29 +467,16 @@ describe('paying by bank (NGN, Pay with Bank)', () => {
     expect(card.status).toBe(409);
   });
 
-  test('a missing account number is rejected before Paystack is ever called', async () => {
-    const event = await makeEvent({ amountMinor: 800000, currency: 'NGN' });
+  test('bank transfer is refused for a GHS-priced registration', async () => {
+    const event = await makeEvent({ amountMinor: 15000, currency: 'GHS' });
     const user = await participant();
     const reference = await pendingRegistration(event, user);
 
     const res = await request(server).post('/api/v1/payments/initiate')
-      .set(authHeader(user))
-      .send({ registrationReference: reference, channel: 'bank', bank: { code: '057' } });
+      .set(authHeader(user)).send({ registrationReference: reference, channel: 'bank_transfer' });
 
-    expect(res.status).toBe(422);
-    expect(initiateBankChargeMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('GET /payments/banks', () => {
-  test('proxies Paystack\'s bank list', async () => {
-    const user = await participant();
-    listBanksMock.mockResolvedValue([{ name: 'Access Bank', code: '044' }]);
-
-    const res = await request(server).get('/api/v1/payments/banks').set(authHeader(user));
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual([{ name: 'Access Bank', code: '044' }]);
+    expect(res.status).toBe(409);
+    expect(createVirtualAccountMock).not.toHaveBeenCalled();
   });
 });
 

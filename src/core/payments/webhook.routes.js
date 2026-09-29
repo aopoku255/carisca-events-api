@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyPaystackSignature } from './paystack.client.js';
-import { processWebhookEvent } from './payment.service.js';
+import { verifyOgatewaySignature } from './ogateway.client.js';
+import { processWebhookEvent, processOgatewayWebhook } from './payment.service.js';
 import { logger } from '../../lib/logger.js';
 
 const router = Router();
@@ -42,6 +43,32 @@ router.post('/paystack', async (req, res) => {
     // that already failed for a reason retrying won't fix, and the
     // reconciliation sweep is the real safety net here.
     logger.error({ err: err.message, eventType, providerEventId }, 'paystack webhook processing failed');
+  }
+
+  return res.status(200).json({ success: true });
+});
+
+/**
+ * OGateway callbacks. Same raw-body arrangement as above; the signature is an
+ * HMAC-SHA512 of the exact bytes in `x-ogateway-signature`. Answers 200 for
+ * anything it recognises as JSON so a permanent failure isn't retried.
+ */
+router.post('/ogateway', async (req, res) => {
+  const rawBody = req.body;
+  const signatureValid = verifyOgatewaySignature(rawBody, req.get('x-ogateway-signature'));
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    logger.warn('ogateway webhook: body was not valid JSON');
+    return res.status(400).json({ success: false, message: 'Invalid payload.' });
+  }
+
+  try {
+    await processOgatewayWebhook({ payload, signatureValid });
+  } catch (err) {
+    logger.error({ err: err.message, id: payload?.id }, 'ogateway webhook processing failed');
   }
 
   return res.status(200).json({ success: true });

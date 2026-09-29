@@ -1,10 +1,14 @@
 import { Op } from 'sequelize';
 import { models } from '../../database/models/index.js';
 import { paymentReference } from '../../lib/ids.js';
-import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import {
+  AppError, ConflictError, NotFoundError, ValidationError,
+} from '../../lib/errors.js';
 import { notify } from '../notifications/notification.service.js';
 import { confirmPaidRegistration } from '../registrations/registration.service.js';
 import * as paystack from './paystack.client.js';
+import * as ogateway from './ogateway.client.js';
+import { fromMinor } from '../../lib/money.js';
 import { logger } from '../../lib/logger.js';
 import env from '../../config/env.js';
 
@@ -13,38 +17,60 @@ const {
 } = models;
 
 /**
- * Which currencies route through which Charge API flow. Paystack ties
- * channel availability to the transaction currency/market, not a raw
- * country field, so this is the single source of truth both `initiatePayment`
- * and the frontend's channel picker key off of.
+ * Which currencies route through which flow. Channel availability follows the
+ * transaction currency/market, not a raw country field, so this is the single
+ * source of truth both `initiatePayment` and the frontend's channel picker
+ * key off of. Ghana and Kenya use Paystack's mobile-money Charge API; Nigeria
+ * (NGN) is paid by bank transfer into an OGateway virtual account; everything
+ * else is Paystack card checkout.
  */
 const MOBILE_MONEY_CURRENCIES = new Set(['GHS', 'KES']);
-const BANK_CURRENCIES = new Set(['NGN']);
+const BANK_TRANSFER_CURRENCIES = new Set(['NGN']);
 const MOBILE_MONEY_PROVIDERS = { GHS: ['mtn', 'atl', 'vod'], KES: ['mpesa'] };
-
-let banksCache = null; // { fetchedAt, banks }
-const BANKS_CACHE_TTL_MS = 6 * 60 * 60_000;
 
 function callbackUrlFor(registration) {
   return `${env.WEB_URL}/dashboard/registrations/${registration.reference}/pay/callback`;
 }
 
-/** Dispatches to whichever Paystack "what's the status now" call matches this payment's channel. */
-function checkChargeStatus(payment) {
-  const channel = payment.provider_metadata?.channel;
-  return channel === 'mobile_money' || channel === 'bank'
-    ? paystack.checkPendingCharge(payment.reference)
-    : paystack.verifyTransaction(payment.reference);
+/**
+ * OGateway statuses folded into the Paystack-shaped verdict the rest of this
+ * file already branches on. A COMPLETED transfer for less than the amount due
+ * is deliberately neither success nor failure — the registration must not
+ * confirm on a short payment, and it isn't the participant's failure to retry.
+ */
+function normaliseOgatewayStatus(payment, data) {
+  const paidAmount = Number(data.amount);
+  const dueAmount = Number(fromMinor(payment.amount_minor, payment.currency));
+
+  if (data.status === 'COMPLETED') {
+    if (data.currency && data.currency !== payment.currency) {
+      logger.error({ paymentId: payment.id, got: data.currency }, 'ogateway payment settled in the wrong currency');
+      return { status: 'underpaid', message: 'Payment currency did not match.' };
+    }
+    if (!(paidAmount >= dueAmount)) {
+      logger.error({ paymentId: payment.id, paidAmount, dueAmount }, 'ogateway payment was less than the amount due');
+      return { status: 'underpaid', message: 'Payment was less than the amount due.' };
+    }
+    return { status: 'success', message: null };
+  }
+  if (['FAILED', 'CANCELLED'].includes(data.status)) {
+    return { status: 'failed', message: data.provider_message || data.message || 'The transfer was not completed.' };
+  }
+  return { status: 'pending', message: null };
 }
 
-/** Nigerian banks rarely change; cached in-process so every pay-page load isn't a live Paystack call. */
-export async function listBanks() {
-  if (banksCache && Date.now() - banksCache.fetchedAt < BANKS_CACHE_TTL_MS) {
-    return banksCache.banks;
+/** Dispatches to whichever provider call matches this payment's channel. */
+async function checkChargeStatus(payment) {
+  if (payment.provider === 'ogateway') {
+    const data = await ogateway.getPayment(payment.provider_metadata?.ogatewayId);
+    const verdict = normaliseOgatewayStatus(payment, data);
+    return { status: verdict.status, gateway_response: verdict.message };
   }
-  const banks = await paystack.listBanks();
-  banksCache = { fetchedAt: Date.now(), banks };
-  return banks;
+
+  const channel = payment.provider_metadata?.channel;
+  return channel === 'mobile_money'
+    ? paystack.checkPendingCharge(payment.reference)
+    : paystack.verifyTransaction(payment.reference);
 }
 
 /**
@@ -121,22 +147,22 @@ export async function markPaymentFailed(payment, reason) {
  * preference, so it's enforced here rather than left to the frontend to get
  * right.
  */
-export async function initiatePayment(registration, { channel, mobileMoney, bank } = {}) {
+export async function initiatePayment(registration, { channel, mobileMoney } = {}) {
   if (!['PENDING_PAYMENT', 'REQUIRES_REVIEW'].includes(registration.status)) {
     throw new ConflictError('This registration is not waiting on payment.', 'NOT_AWAITING_PAYMENT');
   }
 
   const { currency } = registration;
   const isMobileMoney = MOBILE_MONEY_CURRENCIES.has(currency);
-  const isBank = BANK_CURRENCIES.has(currency);
+  const isBankTransfer = BANK_TRANSFER_CURRENCIES.has(currency);
 
   if (channel === 'mobile_money' && !isMobileMoney) {
     throw new ConflictError(`Mobile money is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
   }
-  if (channel === 'bank' && !isBank) {
-    throw new ConflictError(`Bank payment is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
+  if (channel === 'bank_transfer' && !isBankTransfer) {
+    throw new ConflictError(`Bank transfer is not available for ${currency}-priced registrations.`, 'CHANNEL_UNAVAILABLE');
   }
-  if (channel === 'card' && (isMobileMoney || isBank)) {
+  if (channel === 'card' && (isMobileMoney || isBankTransfer)) {
     throw new ConflictError(`A ${currency} registration is not paid by card.`, 'CHANNEL_UNAVAILABLE');
   }
   if (channel === 'mobile_money') {
@@ -152,18 +178,13 @@ export async function initiatePayment(registration, { channel, mobileMoney, bank
       ]);
     }
   }
-  if (channel === 'bank' && (!bank?.accountNumber || !bank?.code)) {
-    throw new ValidationError([
-      { field: 'bank', message: 'A bank and account number are required.' },
-    ]);
-  }
 
   const payment = await Payment.create({
     registration_id: registration.id,
     event_id: registration.event_id,
     user_id: registration.user_id,
     reference: paymentReference(),
-    provider: 'paystack',
+    provider: channel === 'bank_transfer' ? 'ogateway' : 'paystack',
     amount_minor: registration.price_amount_minor,
     currency: registration.currency,
     status: 'PROCESSING',
@@ -200,28 +221,36 @@ export async function initiatePayment(registration, { channel, mobileMoney, bank
       };
     }
 
-    if (channel === 'bank') {
-      const data = await paystack.initiateBankCharge({
-        email,
-        amountMinor: registration.price_amount_minor,
+    if (channel === 'bank_transfer') {
+      const { user } = registration;
+      const data = await ogateway.createVirtualAccount({
+        amount: Number(fromMinor(registration.price_amount_minor, registration.currency)),
         currency: registration.currency,
         reference: payment.reference,
-        bankCode: bank.code,
-        accountNumber: bank.accountNumber,
+        accountName: `${user.first_name} ${user.last_name}`.trim(),
+        // "The customer's mobile number or identifier" — the phone on file.
+        accountNumber: String(user.phone ?? '').replace(/\D/g, ''),
+        reason: `Registration ${registration.reference}`,
+        email,
       });
+
+      const virtualAccount = {
+        bankName: data.virtual_account?.bank_name ?? null,
+        accountName: data.virtual_account?.account_name ?? null,
+        accountNumber: data.virtual_account?.account_number ?? null,
+      };
+      if (!virtualAccount.accountNumber) {
+        throw new AppError('The payment provider did not return an account to pay into.', {
+          status: 502, code: 'OGATEWAY_NO_ACCOUNT',
+        });
+      }
 
       await payment.update({
-        provider_reference: payment.reference,
-        provider_metadata: {
-          channel: 'bank', paystackStatus: data.status, displayText: data.display_text ?? null,
-        },
+        provider_reference: String(data.id),
+        provider_metadata: { channel: 'bank_transfer', ogatewayId: String(data.id), virtualAccount },
       });
 
-      if (data.status === 'success') await markPaymentSuccessful(payment, { paystackStatus: data.status });
-
-      return {
-        payment, status: data.status, displayText: data.display_text ?? null,
-      };
+      return { payment, status: 'pending_transfer', virtualAccount };
     }
 
     const data = await paystack.initializeTransaction({
@@ -276,13 +305,6 @@ export async function submitPin(reference, pin) {
   const payment = await findPaymentByReference(reference);
   if (payment.status === 'SUCCESSFUL') return { payment, status: 'success', message: null };
   const data = await paystack.submitPin({ reference: payment.reference, pin });
-  return relayChargeResult(payment, data);
-}
-
-export async function submitBirthday(reference, birthday) {
-  const payment = await findPaymentByReference(reference);
-  if (payment.status === 'SUCCESSFUL') return { payment, status: 'success', message: null };
-  const data = await paystack.submitBirthday({ reference: payment.reference, birthday });
   return relayChargeResult(payment, data);
 }
 
@@ -357,6 +379,59 @@ export async function processWebhookEvent({
 }
 
 /**
+ * Processes one OGateway callback. Its payload carries no event id or type,
+ * only the transaction's own `id` and `status`, so `id:status` is the dedupe
+ * key — a replay of the same outcome fails the unique insert and is skipped,
+ * while COMPLETED arriving after an earlier FAILED for the same id is still
+ * processed. The payment is found by `reference_business`, the reference we
+ * sent when creating the virtual account.
+ */
+export async function processOgatewayWebhook({ payload, signatureValid }) {
+  let paymentEvent;
+  try {
+    paymentEvent = await PaymentEvent.create({
+      provider: 'ogateway',
+      provider_event_id: `${payload?.id ?? 'unknown'}:${payload?.status ?? 'unknown'}`,
+      event_type: `collection.${String(payload?.status ?? 'unknown').toLowerCase()}`,
+      raw_payload: payload,
+      signature_valid: signatureValid,
+      received_at: new Date(),
+    });
+  } catch (err) {
+    if (err.name === 'SequelizeUniqueConstraintError') return { deduped: true, processed: false };
+    throw err;
+  }
+
+  if (!signatureValid) {
+    await paymentEvent.update({ processing_status: 'IGNORED', processing_error: 'Invalid signature' });
+    return { deduped: false, processed: false };
+  }
+
+  try {
+    const payment = payload?.reference_business
+      ? await Payment.findOne({ where: { reference: payload.reference_business, provider: 'ogateway' } })
+      : null;
+
+    if (payment) {
+      await paymentEvent.update({ payment_id: payment.id });
+      const verdict = normaliseOgatewayStatus(payment, payload);
+
+      if (verdict.status === 'success') {
+        await markPaymentSuccessful(payment, { ogatewayStatus: payload.status, webhook: true });
+      } else if (verdict.status === 'failed' && payment.status !== 'SUCCESSFUL') {
+        await markPaymentFailed(payment, verdict.message);
+      }
+    }
+    await paymentEvent.update({ processing_status: 'PROCESSED', processed_at: new Date() });
+  } catch (err) {
+    await paymentEvent.update({ processing_status: 'FAILED', processing_error: err.message });
+    throw err;
+  }
+
+  return { deduped: false, processed: true };
+}
+
+/**
  * The safety net for a webhook that never arrives and a participant who
  * never comes back to the app after paying. Same shape as
  * `registration.service.js`'s `sweepExpiredHolds()` — a bounded poll on a
@@ -409,12 +484,11 @@ export default {
   initiatePayment,
   submitOtp,
   submitPin,
-  submitBirthday,
   verifyPayment,
   markPaymentSuccessful,
   markPaymentFailed,
   processWebhookEvent,
+  processOgatewayWebhook,
   reconcilePendingPayments,
   findPaymentByReference,
-  listBanks,
 };

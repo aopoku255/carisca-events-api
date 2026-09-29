@@ -42,45 +42,30 @@ router.post('/initiate',
   validate({
     body: z.object({
       registrationReference: z.string().trim().min(1).max(48),
-      channel: z.enum(['mobile_money', 'bank', 'card']),
+      channel: z.enum(['mobile_money', 'bank_transfer', 'card']),
       mobileMoney: z.object({
         phone: z.string().trim().min(6).max(20),
         provider: z.enum(['mtn', 'atl', 'vod', 'mpesa']),
-      }).optional(),
-      bank: z.object({
-        code: z.string().trim().min(1).max(10),
-        accountNumber: z.string().trim().min(1).max(20),
       }).optional(),
     }),
   }),
   async (req, res, next) => {
     try {
-      const {
-        registrationReference, channel, mobileMoney, bank,
-      } = req.body;
+      const { registrationReference, channel, mobileMoney } = req.body;
       const registration = await ownedRegistrationByReference(registrationReference, req.user.id);
-      const result = await paymentService.initiatePayment(registration, { channel, mobileMoney, bank });
+      const result = await paymentService.initiatePayment(registration, { channel, mobileMoney });
 
       return created(res, {
         reference: result.payment.reference,
         status: result.status ?? 'initialized',
         displayText: result.displayText ?? null,
         checkoutUrl: result.checkoutUrl ?? null,
+        virtualAccount: result.virtualAccount ?? null,
       });
     } catch (err) {
       return next(err);
     }
   });
-
-/** Nigeria's "Pay with Bank" picker — no ownership check, Paystack's bank list isn't participant-specific. */
-router.get('/banks', authenticate, async (req, res, next) => {
-  try {
-    const banks = await paymentService.listBanks();
-    return ok(res, banks);
-  } catch (err) {
-    return next(err);
-  }
-});
 
 router.post('/:reference/submit-otp',
   authenticate,
@@ -114,26 +99,10 @@ router.post('/:reference/submit-pin',
     }
   });
 
-router.post('/:reference/submit-birthday',
-  authenticate,
-  validate({
-    params: z.object({ reference: z.string().trim().min(1).max(48) }),
-    body: z.object({ birthday: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.') }),
-  }),
-  async (req, res, next) => {
-    try {
-      await ownedPaymentByReference(req.params.reference, req.user.id);
-      const result = await paymentService.submitBirthday(req.params.reference, req.body.birthday);
-      return ok(res, { status: result.status, message: result.message });
-    } catch (err) {
-      return next(err);
-    }
-  });
-
 /**
  * Reads current status — and, for a payment still awaiting a verdict on a
  * channel that settles asynchronously (card checkout's redirect, M-Pesa's
- * STK push, a Nigerian bank charge), checks with Paystack first. This is
+ * STK push, a Nigerian bank transfer), checks with Paystack first. This is
  * what both the card checkout-return page and the pay page's "waiting"
  * screen poll. Ghana mobile money is the one channel that's never checked
  * here: its own submit-otp/submit-pin response, the webhook, and the
@@ -149,7 +118,7 @@ router.get('/:reference',
       const channel = payment.provider_metadata?.channel;
 
       if (['PENDING', 'PROCESSING'].includes(payment.status)
-          && (channel === 'card' || channel === 'bank'
+          && (channel === 'card' || channel === 'bank_transfer'
               || (channel === 'mobile_money' && payment.provider_metadata?.paystackStatus === 'pending'))) {
         payment = await paymentService.verifyPayment(payment.reference);
       }
@@ -160,6 +129,7 @@ router.get('/:reference',
         amount: serialiseMoney(payment.amount_minor, payment.currency),
         checkoutUrl: payment.checkout_url,
         failureReason: payment.failure_reason,
+        virtualAccount: payment.provider_metadata?.virtualAccount ?? null,
       });
     } catch (err) {
       return next(err);

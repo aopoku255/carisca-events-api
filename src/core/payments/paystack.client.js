@@ -101,35 +101,6 @@ export function submitPin({ reference, pin }) {
   return call('POST', '/charge/submit_pin', { reference, pin });
 }
 
-export function submitBirthday({ reference, birthday }) {
-  return call('POST', '/charge/submit_birthday', { reference, birthday });
-}
-
-/**
- * Nigeria "Pay with Bank". `data.status` after this call is usually
- * `send_birthday` or `send_otp` — which one Paystack asks for first isn't
- * documented anywhere reachable (their docs site 403s non-browser requests),
- * so callers must not assume an order and should branch on whatever status
- * actually comes back.
- */
-export function initiateBankCharge({
-  email, amountMinor, currency, reference, bankCode, accountNumber, birthday,
-}) {
-  return call('POST', '/charge', {
-    email,
-    amount: amountMinor,
-    currency,
-    reference,
-    bank: { code: bankCode, account_number: accountNumber },
-    ...(birthday ? { birthday } : {}),
-  });
-}
-
-/** Nigerian banks that support "Pay with Bank" — populates the account-charge picker. */
-export function listBanks() {
-  return call('GET', '/bank?country=nigeria&currency=NGN&pay_with_bank=true');
-}
-
 /** Polls a charge that never resolved synchronously — used by the reconciliation sweep. */
 export function checkPendingCharge(reference) {
   return call('GET', `/charge/${encodeURIComponent(reference)}`);
@@ -153,11 +124,8 @@ export default {
   initializeTransaction,
   verifyTransaction,
   initiateMobileMoneyCharge,
-  initiateBankCharge,
   submitOtp,
   submitPin,
-  submitBirthday,
   checkPendingCharge,
-  listBanks,
   verifyPaystackSignature,
 };

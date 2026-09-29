@@ -31,6 +31,7 @@ module.exports = {
     await queryInterface.bulkInsert('payment_providers', [
       { key: 'paystack', name: 'Paystack', is_enabled: true, is_healthy: true, created_at: ts, updated_at: ts },
       { key: 'stripe', name: 'Stripe', is_enabled: true, is_healthy: true, created_at: ts, updated_at: ts },
+      { key: 'ogateway', name: 'OGateway', is_enabled: true, is_healthy: true, created_at: ts, updated_at: ts },
     ], { updateOnDuplicate: ['name', 'updated_at'] });
 
     // currency, country (null = any), provider, priority
@@ -89,7 +90,7 @@ module.exports = {
     await queryInterface.bulkInsert('system_settings', [
       { key: 'organisation.name', value: JSON.stringify('CARISCA'), description: 'Display name used on certificates and emails', is_public: true, created_at: ts, updated_at: ts },
       { key: 'organisation.full_name', value: JSON.stringify('Centre for Applied Research and Innovation in Supply Chain-Africa'), description: 'Full legal name', is_public: true, created_at: ts, updated_at: ts },
-      { key: 'organisation.tagline', value: JSON.stringify('Strong Supply Chains — Strong Communities'), description: 'Organisation tagline', is_public: true, created_at: ts, updated_at: ts },
+      { key: 'organisation.tagline', value: JSON.stringify('Strong Supply Chains, Strong Communities'), description: 'Organisation tagline', is_public: true, created_at: ts, updated_at: ts },
       { key: 'organisation.email', value: JSON.stringify('carisca@knust.edu.gh'), description: 'Primary contact address', is_public: true, created_at: ts, updated_at: ts },
       { key: 'organisation.address', value: JSON.stringify('KNUST School of Business, Postgraduate Block E, Kumasi, Ghana'), description: 'Postal address', is_public: true, created_at: ts, updated_at: ts },
       { key: 'platform.default_currency', value: JSON.stringify('GHS'), description: 'Currency proposed when creating an event', is_public: false, created_at: ts, updated_at: ts },
