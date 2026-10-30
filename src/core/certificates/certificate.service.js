@@ -48,7 +48,7 @@ function formatCertificateDate(startAt, timezone = 'Africa/Accra') {
  * evaluation.service.js) — it stayed unchecked here for a while because there
  * was no survey feature yet to have been completed.
  */
-export async function certificateEligibility(registration) {
+export async function certificateEligibility(registration, { override = false } = {}) {
   const event = registration.event;
   if (!event) return { eligible: false, reason: 'This registration has no event.' };
   if (!event.issues_certificate) {
@@ -61,6 +61,10 @@ export async function certificateEligibility(registration) {
       reason: 'Your registration must be confirmed before a certificate is available.',
     };
   }
+  // An administrator issuing a certificate by hand has decided the participant
+  // earned it: the timing, survey and opt-out rules below exist to gate a
+  // participant downloading their own, not to second-guess staff.
+  if (override) return { eligible: true };
   const eventFinished = event.status === 'COMPLETED' || new Date(event.end_at) <= new Date();
   if (!eventFinished) {
     return {
@@ -165,8 +169,8 @@ async function ensureCertificateRecord(registration, signatureTwo) {
   }
 }
 
-export async function generateCertificate(registration, { format = 'pdf' } = {}) {
-  const { eligible, code, reason } = await certificateEligibility(registration);
+export async function generateCertificate(registration, { format = 'pdf', override = false } = {}) {
+  const { eligible, code, reason } = await certificateEligibility(registration, { override });
   if (!eligible) throw new ConflictError(reason, code);
 
   const event = registration.event;

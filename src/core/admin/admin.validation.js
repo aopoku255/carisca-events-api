@@ -37,6 +37,10 @@ export const createUserSchema = z.object({
   firstName: z.string().trim().min(1, 'First name is required.').max(80),
   lastName: z.string().trim().min(1, 'Last name is required.').max(80),
   roleKeys: z.array(z.string().trim().max(64)).max(20).default([]),
+  // Create-only: collected for participants so they are registration-ready.
+  gender: z.string().trim().max(32).nullish(),
+  positionKey: z.string().trim().max(64).nullish(),
+  sectorKey: z.string().trim().max(64).nullish(),
   ...profileFields,
 }).strict();
 

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { models, sequelize } from '../../database/models/index.js';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { hashPassword } from '../auth/auth.service.js';
@@ -9,7 +10,9 @@ import { sendMail } from '../notifications/channels/mail.js';
 import { render } from '../notifications/templates/index.js';
 import { logger } from '../../lib/logger.js';
 
-const { User, Role, Department } = models;
+const {
+  User, Role, Department, Position, Sector,
+} = models;
 
 /**
  * Administrative user management — the counterpart to user.routes.js, which
@@ -89,6 +92,13 @@ async function resolveDepartment(departmentId, transaction = null) {
  * pass it on directly, exactly as before this existed. The caller is told
  * whether it actually sent, so the confirmation screen can say which.
  */
+/** A readable temporary password for accounts an administrator opens for someone else. */
+export function generateTemporaryPassword() {
+  const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(14);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
 export async function createUser(input, { actor, context = {} } = {}) {
   const email = String(input.email).trim().toLowerCase();
 
@@ -101,6 +111,17 @@ export async function createUser(input, { actor, context = {} } = {}) {
 
   await resolveDepartment(input.departmentId);
   const roles = await resolveRoles(input.roleKeys);
+
+  let position = null;
+  if (input.positionKey) {
+    position = await Position.findOne({ where: { key: input.positionKey, is_active: true } });
+    if (!position) throw new ValidationError([{ field: 'positionKey', message: 'Unknown position.' }]);
+  }
+  let sector = null;
+  if (input.sectorKey) {
+    sector = await Sector.findOne({ where: { key: input.sectorKey, is_active: true } });
+    if (!sector) throw new ValidationError([{ field: 'sectorKey', message: 'Unknown sector.' }]);
+  }
 
   // Staff is what admits someone to the console at all. Anyone given a role
   // beyond participant needs it, so it is inferred rather than left to be
@@ -120,6 +141,9 @@ export async function createUser(input, { actor, context = {} } = {}) {
       country_code: input.countryCode || null,
       organization: input.organization || null,
       job_title: input.jobTitle || null,
+      gender: input.gender || null,
+      position_id: position?.id ?? null,
+      sector_id: sector?.id ?? null,
       timezone: input.timezone || null,
       department_id: input.departmentId || null,
       status: input.status || 'ACTIVE',

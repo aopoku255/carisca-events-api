@@ -19,10 +19,12 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors.js';
 import { toCsv, exportFilename, sendCsv } from '../../lib/csv.js';
 import { record as audit } from '../audit/audit.service.js';
 import * as authService from '../auth/auth.service.js';
+import { createUser, generateTemporaryPassword } from '../users/user-admin.service.js';
+import { getPermissions } from '../rbac/rbac.service.js';
 import { serialiseUser } from '../users/user.serialiser.js';
 
 const {
-  Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail, Payment,
+  Registration, Event, User, Country, RegistrationAnswer, RegistrationQuestion, CpdEventDetail, Payment, AttendanceRecord,
 } = models;
 
 const router = Router();
@@ -193,6 +195,110 @@ router.post('/guest',
           dueBy: registration.hold_expires_at,
         },
       }, registrationMessage(status));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * An administrator registers someone on their behalf — a phone call, a walk-in,
+ * a sponsor's guest. Either an existing account (`userId`, or an `email` that
+ * already has one) or the details for a new one. A new account is created with
+ * a temporary password and the participant is emailed their sign-in details,
+ * followed by the usual registration email.
+ */
+const adminRegisterSchema = registerSchema.extend({
+  userId: z.coerce.number().int().positive().optional(),
+  participant: z.object({
+    firstName: z.string().trim().min(1, 'Enter a first name.').max(80),
+    lastName: z.string().trim().min(1, 'Enter a last name.').max(80),
+    email: z.string().trim().min(1, 'Enter an email address.').email('That does not look like an email address.').max(255),
+    gender: z.string().trim().min(1, 'Select a gender.').max(32),
+    phone: z.string().trim().max(32).optional(),
+    countryCode: z.string().trim().length(2).optional().or(z.literal('')),
+    organization: z.string().trim().max(160).optional(),
+    jobTitle: z.string().trim().max(160).optional(),
+    positionKey: z.string().trim().max(64).optional(),
+    sectorKey: z.string().trim().max(64).optional(),
+    password: z.string().min(10, 'Use at least 10 characters.').max(200).optional().or(z.literal('')),
+  }).optional(),
+  waiveFee: z.boolean().default(false),
+}).refine((d) => d.userId || d.participant, {
+  message: 'Choose an existing participant or enter their details.',
+  path: ['participant'],
+});
+
+router.post('/admin',
+  authenticate,
+  loadPermissions,
+  requirePermission('registration.create'),
+  validate({ body: adminRegisterSchema }),
+  async (req, res, next) => {
+    try {
+      const actor = { id: req.user.id, email: req.user.email };
+      const { userId, participant, waiveFee, ...registerInput } = req.body;
+
+      let user = null;
+      let accountCreated = false;
+      let credentialsEmailSent = false;
+
+      if (userId) {
+        user = await User.findByPk(userId);
+        if (!user) throw new NotFoundError('Participant');
+      } else {
+        user = await User.findOne({
+          where: { email: participant.email.trim().toLowerCase() },
+        });
+        if (!user) {
+          const result = await createUser({
+            ...participant,
+            email: participant.email,
+            password: participant.password || generateTemporaryPassword(),
+            countryCode: participant.countryCode || null,
+            isStaff: false,
+            roleKeys: ['participant'],
+          }, { actor, context: contextOf(req) });
+          user = result.user;
+          accountCreated = true;
+          credentialsEmailSent = result.welcomeEmailSent;
+        }
+      }
+
+      const { registration, price, status } = await registrationService.register({
+        ...registerInput,
+        user,
+      }, { context: contextOf(req), byAdmin: true, actor });
+
+      let finalStatus = status;
+      if (waiveFee && Number(registration.price_amount_minor) > 0) {
+        await registrationService.waive(registration.id, {
+          actor, amount: '0', reason: 'Added by an administrator', context: contextOf(req),
+        });
+        finalStatus = 'CONFIRMED';
+      }
+
+      await audit({
+        actor,
+        action: 'registration.created_by_admin',
+        resourceType: 'registration',
+        resourceId: registration.id,
+        after: { userId: user.id, accountCreated, waiveFee, status: finalStatus },
+        context: contextOf(req),
+      });
+
+      const full = await Registration.findByPk(registration.id, {
+        include: [{ model: Event, as: 'event' }],
+      });
+
+      return created(res, {
+        registration: serialiseRegistration(full),
+        participant: { id: String(user.id), name: `${user.first_name} ${user.last_name}`.trim(), email: user.email },
+        accountCreated,
+        credentialsEmailSent,
+        payment: price.amountMinor === 0 || finalStatus === 'CONFIRMED' ? null : {
+          required: true, amount: price.money, dueBy: registration.hold_expires_at,
+        },
+      }, 'Participant registered.');
     } catch (err) {
       return next(err);
     }
@@ -369,6 +475,18 @@ router.get('/:reference',
         includeAnswers: true, includeWaiver: req.viewerIsStaff,
       });
       data.certificate = await certificateEligibility(req.registration);
+
+      if (req.viewerIsStaff) {
+        // What the desk needs beside the participant's own view: whether they
+        // were admitted, and whether staff can issue a certificate by hand.
+        const record = await AttendanceRecord.findOne({
+          where: { registration_id: req.registration.id, session_id: null },
+        });
+        data.attendance = record ? {
+          status: record.status, checkedInAt: record.check_in_at, method: record.method,
+        } : null;
+        data.adminCertificate = await certificateEligibility(req.registration, { override: true });
+      }
       return ok(res, data);
     } catch (err) {
       return next(err);
@@ -389,10 +507,27 @@ router.get('/:reference/certificate',
   loadOwnedRegistration,
   async (req, res, next) => {
     try {
+      // Staff holding certificate.generate issue it by hand, regardless of the
+      // timing/survey/opt-out rules that gate a participant's own download.
+      let override = false;
+      if (req.viewerIsStaff) {
+        override = (await getPermissions(req.user.id)).has('certificate.generate');
+      }
+
       const { buffer, contentType, filename } = await generateCertificate(
         req.registration,
-        { format: req.validatedQuery.format },
+        { format: req.validatedQuery.format, override },
       );
+
+      if (override) {
+        await audit({
+          actor: { id: req.user.id, email: req.user.email },
+          action: 'certificate.generated_by_admin',
+          resourceType: 'registration',
+          resourceId: req.registration.id,
+          context: contextOf(req),
+        });
+      }
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', buffer.length);

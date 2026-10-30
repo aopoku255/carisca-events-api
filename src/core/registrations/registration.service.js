@@ -103,8 +103,11 @@ export async function register({
   mediaConsent = false,
   evidenceFileId = null,
   preferredCurrency = null,
-}, { context = {} } = {}) {
-  const missing = missingProfileFields(user);
+}, { context = {}, byAdmin = false, actor = null } = {}) {
+  // An administrator registering someone on their behalf is vouching for the
+  // details, and the participant often has none on file yet — the profile gate
+  // exists to stop a self-registrant skipping their own details.
+  const missing = byAdmin ? [] : missingProfileFields(user);
   if (missing.length) {
     throw new ConflictError(
       'Finish your profile before registering.',
@@ -121,7 +124,12 @@ export async function register({
     if (event.status === 'CANCELLED') {
       throw new ConflictError('This event has been cancelled.', 'EVENT_CANCELLED');
     }
-    if (!event.isOpenForRegistration()) {
+    // An administrator may add someone after the public window has closed (a
+    // late walk-in, a sponsor's guest), but not to an event that is not yet
+    // live or is already archived.
+    const adminOk = ['PUBLISHED', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'ONGOING', 'COMPLETED']
+      .includes(event.status);
+    if (byAdmin ? !adminOk : !event.isOpenForRegistration()) {
       throw new ConflictError('Registration for this event is not open.', 'REGISTRATION_CLOSED');
     }
     if (attendanceMode === 'VIRTUAL' && event.delivery_mode === 'OFFLINE') {
@@ -248,8 +256,8 @@ export async function register({
     }
 
     await recordStatus(registration, previousStatus, status, {
-      reason: waitlisted ? 'Event at capacity' : null,
-      actorId: user.id,
+      reason: waitlisted ? 'Event at capacity' : (byAdmin ? 'Added by an administrator' : null),
+      actorId: byAdmin ? (actor?.id ?? user.id) : user.id,
       transaction,
     });
 
