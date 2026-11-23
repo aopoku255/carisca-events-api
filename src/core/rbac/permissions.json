@@ -107,6 +107,13 @@
       "description": "Cancel a registration"
     },
     {
+      "key": "registration.email",
+      "module": "core",
+      "resource": "registration",
+      "action": "email",
+      "description": "Email an event's participants, individually or in bulk"
+    },
+    {
       "key": "registration.export",
       "module": "core",
       "resource": "registration",
@@ -494,6 +501,7 @@
         "registration.update",
         "registration.approve",
         "registration.cancel",
+        "registration.email",
         "registration.export",
         "attendance.view",
         "attendance.mark",

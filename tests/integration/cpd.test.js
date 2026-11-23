@@ -52,6 +52,40 @@ async function setPrices(eventId, prices, as = manager) {
 
 const standard = [{ label: 'Standard', amount: '150.00', currency: 'USD', isDefault: true }];
 
+describe('a Distinguished Lecture Series', () => {
+  test('is created through the CPD module with its own programme type', async () => {
+    const event = await createDraft({ programme: 'dls' });
+    expect(event.type).toEqual({ key: 'dls', name: 'Distinguished Lecture Series' });
+
+    const plain = await createDraft();
+    expect(plain.type.key).toBe('cpd');
+  });
+
+  test('an existing CPD can be switched to one and back, and the list shows both kinds', async () => {
+    const event = await createDraft();
+
+    const toDls = await request(server).patch(`/api/v1/cpd/events/${event.id}`)
+      .set(authHeader(manager)).send({ programme: 'dls' });
+    expect(toDls.status).toBe(200);
+    expect(toDls.body.data.type.key).toBe('dls');
+
+    const list = await request(server).get('/api/v1/cpd/events?limit=100').set(authHeader(manager));
+    expect(list.body.data.map((e) => e.id)).toContain(event.id);
+
+    const back = await request(server).patch(`/api/v1/cpd/events/${event.id}`)
+      .set(authHeader(manager)).send({ programme: 'cpd' });
+    expect(back.body.data.type.key).toBe('cpd');
+  });
+
+  test('keeps its CPD-specific detail and the other CPD routes work on it', async () => {
+    const event = await createDraft({ programme: 'dls', cpd: { cpdCredits: 3 } });
+    expect(event.cpd.credits).toBe(3);
+
+    const prices = await setPrices(event.id, standard);
+    expect(prices.status).toBe(200);
+  });
+});
+
 describe('creating a CPD', () => {
   test('a manager creates it as a draft with a generated slug', async () => {
     const event = await createDraft();

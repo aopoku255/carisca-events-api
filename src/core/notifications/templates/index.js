@@ -19,6 +19,14 @@ const BRAND = { blue: '#0F3B8F', navy: '#0A2961', slate: '#677289', mist: '#B3BD
 const fileUrl = (id) => (id ? `${env.API_URL}/api/v1/files/${id}` : null);
 
 /**
+ * There is no /dashboard/registrations list page, only one per registration —
+ * linking to the bare path 404s. Falls back to the dashboard, which lists them.
+ */
+const registrationUrl = (reference) => (reference
+  ? `${env.WEB_URL}/dashboard/registrations/${encodeURIComponent(reference)}`
+  : `${env.WEB_URL}/dashboard`);
+
+/**
  * The three-institution lockup already used site-wide (see
  * `carisca-web/src/app/layout.tsx`'s footer) — served from `carisca-web`'s
  * own `public/` folder, so no upload or file-id lookup is needed here.
@@ -122,7 +130,7 @@ export const templates = {
            <p><strong>Reference:</strong> ${escape(p.reference)}<br>
               <strong>Attending:</strong> ${p.attendanceMode === 'VIRTUAL' ? 'Online' : 'In person'}</p>
            <p>Bring your QR code with you. It is in your dashboard and is how we check you in.</p>`,
-    cta: { label: 'View my registration', url: `${env.WEB_URL}/dashboard/registrations` },
+    cta: { label: 'View my registration', url: registrationUrl(p.reference) },
     banner: fileUrl(p.bannerFileId),
   }),
 
@@ -202,7 +210,23 @@ export const templates = {
              <strong>${escape(p.eventTitle)}</strong> have changed
              (${escape((p.changed || []).join(', '))}).</p>
            <p>Please check the latest details before you travel.</p>`,
-    cta: { label: 'View the event', url: `${env.WEB_URL}/dashboard/registrations` },
+    cta: { label: 'View my registration', url: registrationUrl(p.reference) },
+  }),
+
+  /**
+   * A message an administrator wrote to an event's participants. The body is
+   * plain text typed by staff, so it is escaped and only its line breaks are
+   * kept — nothing in it can inject markup.
+   */
+  admin_message: (p) => ({
+    subject: p.subject || 'A message from CARISCA',
+    heading: p.subject || 'A message from CARISCA',
+    body: `<p>Hello ${escape(p.firstName)},</p>
+           ${String(p.message ?? '').split(/\n{2,}/).map((para) => `<p>${escape(para.trim()).replace(/\n/g, '<br>')}</p>`).join('')}
+           <p style="color:${BRAND.slate};font-size:13px">You are receiving this because you are registered for
+              <strong>${escape(p.eventTitle)}</strong>.</p>`,
+    cta: p.reference ? { label: 'View my registration', url: registrationUrl(p.reference) } : undefined,
+    banner: fileUrl(p.bannerFileId),
   }),
 
   event_cancelled: (p) => ({

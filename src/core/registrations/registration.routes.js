@@ -21,6 +21,7 @@ import { record as audit } from '../audit/audit.service.js';
 import * as authService from '../auth/auth.service.js';
 import { createUser, generateTemporaryPassword } from '../users/user-admin.service.js';
 import { getPermissions } from '../rbac/rbac.service.js';
+import * as messages from './registration-message.service.js';
 import { serialiseUser } from '../users/user.serialiser.js';
 
 const {
@@ -299,6 +300,53 @@ router.post('/admin',
           required: true, amount: price.money, dueBy: registration.hold_expires_at,
         },
       }, 'Participant registered.');
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+/**
+ * Emails an event's participants — everyone matching the filters, or specific
+ * registrations by reference. `dryRun` only counts who would receive it, so
+ * the console can say "this will email 142 people" before anyone presses send.
+ */
+const emailSchema = z.object({
+  eventId: z.coerce.number().int().positive(),
+  references: z.array(z.string().trim().min(1).max(48)).max(messages.MAX_RECIPIENTS).optional(),
+  statuses: z.array(z.enum(['CONFIRMED', 'PENDING_PAYMENT', 'REQUIRES_REVIEW', 'WAITLISTED'])).max(4).optional(),
+  attendanceMode: z.enum(['IN_PERSON', 'VIRTUAL']).optional(),
+  dryRun: z.boolean().default(false),
+  subject: z.string().trim().max(150).optional(),
+  message: z.string().trim().max(10_000).optional(),
+}).superRefine((d, ctx) => {
+  if (d.dryRun) return;
+  if (!d.subject) ctx.addIssue({ code: 'custom', path: ['subject'], message: 'Enter a subject.' });
+  if (!d.message) ctx.addIssue({ code: 'custom', path: ['message'], message: 'Write a message.' });
+});
+
+router.post('/email',
+  authenticate,
+  loadPermissions,
+  requirePermission('registration.email'),
+  validate({ body: emailSchema }),
+  async (req, res, next) => {
+    try {
+      const {
+        dryRun, subject, message, ...filters
+      } = req.body;
+
+      if (dryRun) {
+        return ok(res, { recipients: await messages.countRecipients(filters) });
+      }
+
+      const result = await messages.sendToRegistrants({
+        ...filters,
+        subject,
+        message,
+        actor: { id: req.user.id, email: req.user.email },
+        context: contextOf(req),
+      });
+      return created(res, result, `Queued for ${result.queued} ${result.queued === 1 ? 'person' : 'people'}.`);
     } catch (err) {
       return next(err);
     }

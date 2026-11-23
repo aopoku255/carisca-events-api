@@ -5,6 +5,8 @@ import { closeRedis } from './config/redis.js';
 import { closeBrowser } from './core/certificates/browser.js';
 import { syncPermissions } from './core/rbac/rbac.service.js';
 import { loadCurrencyExponents } from './lib/money.js';
+import { startBackgroundJobs } from './jobs/background-jobs.js';
+import { verifyMailer, closeMailer } from './core/notifications/channels/mail.js';
 import { logger } from './lib/logger.js';
 
 async function start() {
@@ -21,9 +23,19 @@ async function start() {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'carisca-api listening');
   });
 
+  let stopJobs = async () => {};
+  if (env.RUN_JOBS_IN_API) {
+    // Not fatal: the outbox holds mail safely while the relay is down.
+    await verifyMailer();
+    stopJobs = startBackgroundJobs();
+    logger.info('background jobs running inside the API process');
+  }
+
   const shutdown = async (signal) => {
     logger.info({ signal }, 'shutting down');
     server.close(async () => {
+      await stopJobs().catch(() => {});
+      await closeMailer().catch(() => {});
       await disconnect().catch(() => {});
       await closeRedis().catch(() => {});
       await closeBrowser().catch(() => {});

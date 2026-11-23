@@ -38,3 +38,20 @@ describe('no em dashes anywhere in rendered output', () => {
     expect(text).not.toContain('—');
   });
 });
+
+describe('"view my registration" links', () => {
+  // /dashboard/registrations on its own is not a page — only one per
+  // registration exists — so linking to it 404s.
+  test.each(['registration_confirmed', 'event_updated'])('%s links to that registration', (template) => {
+    const { html } = render(template, {
+      firstName: 'Ama', eventTitle: 'Supply Chain Summit', reference: 'CAR-CPD-26-ABC123', changed: ['venue'],
+    });
+    expect(html).toMatch(/href="[^"]*\/dashboard\/registrations\/CAR-CPD-26-ABC123"/);
+  });
+
+  test('without a reference it falls back to the dashboard, never the bare path', () => {
+    const { html } = render('event_updated', { firstName: 'Ama', eventTitle: 'X', changed: [] });
+    expect(html).not.toMatch(/\/dashboard\/registrations"/);
+    expect(html).toMatch(/href="[^"]*\/dashboard"/);
+  });
+});

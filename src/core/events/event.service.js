@@ -104,7 +104,7 @@ export async function create(input, { actor, moduleKey, context = {} }) {
       created_by: actor?.id ?? null,
     }, { transaction });
 
-    if (input.cpd && moduleKey === 'cpd') {
+    if (input.cpd && ['cpd', 'dls'].includes(moduleKey)) {
       await CpdEventDetail.create({ event_id: created.id, ...input.cpd }, { transaction });
     }
     if (input.summit && moduleKey === 'summit') {

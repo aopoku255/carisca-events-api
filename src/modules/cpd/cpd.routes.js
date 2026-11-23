@@ -22,6 +22,8 @@ const {
 } = models;
 
 const MODULE_KEY = 'cpd';
+// Programme kinds that run through this module; each is its own event type.
+const PROGRAMME_KEYS = ['cpd', 'dls'];
 
 /**
  * The CPD module.
@@ -41,7 +43,7 @@ const actorOf = (req) => ({ id: req.user.id, email: req.user.email });
 async function loadCpdEvent(req, res, next) {
   try {
     const event = await eventService.findById(req.params.id);
-    if (event.type?.key !== MODULE_KEY) {
+    if (!PROGRAMME_KEYS.includes(event.type?.key)) {
       return next(Object.assign(new Error('Not a CPD event'), { status: 404 }));
     }
     req.event = event;
@@ -58,9 +60,9 @@ router.get('/events',
   async (req, res, next) => {
     try {
       const { page, limit, sort, order, q, status, countryCode, from, to } = req.validatedQuery;
-      const type = await EventType.findOne({ where: { key: MODULE_KEY } });
+      const types = await EventType.findAll({ where: { key: PROGRAMME_KEYS } });
 
-      const where = { event_type_id: type.id };
+      const where = { event_type_id: { [Op.in]: types.map((t) => t.id) } };
       if (status) where.status = { [Op.in]: status.split(',').map((s) => s.trim().toUpperCase()) };
       if (countryCode) where.country_code = countryCode;
       if (from || to) {
@@ -284,7 +286,7 @@ router.post('/events',
   async (req, res, next) => {
     try {
       const event = await eventService.create(defined(toColumns(req.body)), {
-        actor: actorOf(req), moduleKey: MODULE_KEY, context: contextOf(req),
+        actor: actorOf(req), moduleKey: req.body.programme ?? MODULE_KEY, context: contextOf(req),
       });
       return created(res, serialiseAdminEvent(event), 'CPD created as a draft.');
     } catch (err) {
@@ -298,7 +300,12 @@ router.patch('/events/:id',
   loadCpdEvent,
   async (req, res, next) => {
     try {
-      const event = await eventService.update(req.params.id, defined(toColumns(req.body)), {
+      const columns = defined(toColumns(req.body));
+      if (req.body.programme) {
+        const type = await EventType.findOne({ where: { key: req.body.programme } });
+        if (type) columns.event_type_id = type.id;
+      }
+      const event = await eventService.update(req.params.id, columns, {
         actor: actorOf(req), context: contextOf(req),
       });
       return ok(res, serialiseAdminEvent(event), 'CPD updated.');

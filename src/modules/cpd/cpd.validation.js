@@ -12,6 +12,8 @@ const cpdDetail = z.object({
 }).optional();
 
 const eventBody = z.object({
+  // Which kind of programme this is; both run through the CPD module.
+  programme: z.enum(['cpd', 'dls']).optional(),
   title: z.string().trim().min(3).max(255),
   shortDescription: z.string().trim().max(500).optional(),
   // The rich text editor's HTML — sanitised on the way in so nothing renders

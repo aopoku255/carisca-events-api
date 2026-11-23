@@ -56,6 +56,9 @@ const schema = z.object({
 
   // --- platform behaviour -------------------------------------------------
   REGISTRATION_HOLD_MINUTES: z.coerce.number().int().positive().default(2880),
+  // Runs the email/hold/payment jobs inside the API process, for hosting (cPanel)
+  // that can only run one Node app. Leave off where worker.js runs separately.
+  RUN_JOBS_IN_API: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   PERMISSION_CACHE_TTL_SECONDS: z.coerce.number().int().nonnegative().default(60),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 

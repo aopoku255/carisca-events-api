@@ -2,49 +2,17 @@ import env from './src/config/env.js';
 import { connect, disconnect, sequelize } from './src/database/models/index.js';
 import { closeRedis } from './src/config/redis.js';
 import { loadCurrencyExponents } from './src/lib/money.js';
-import { dispatchOnce } from './src/jobs/workers/notification-dispatcher.js';
+import { startBackgroundJobs, JOBS } from './src/jobs/background-jobs.js';
 import { verifyMailer, closeMailer } from './src/core/notifications/channels/mail.js';
-import { sweepExpiredHolds } from './src/core/registrations/registration.service.js';
-import { reconcilePendingPayments } from './src/core/payments/payment.service.js';
 import { logger } from './src/lib/logger.js';
 
 /**
  * Background worker. A separate process from the API so a slow email provider
  * or a large sweep can never make an HTTP request wait.
  *
- * Deliberately a polling loop rather than BullMQ for now: the two jobs that
- * exist are both "scan a table for due rows", which a queue would not make
- * faster or more reliable. BullMQ arrives in Week 2 with certificate
- * generation and payment reconciliation, which genuinely need retries,
- * concurrency limits and scheduling.
+ * The jobs themselves live in src/jobs/background-jobs.js, which the API can
+ * also run in-process (RUN_JOBS_IN_API) where a second process isn't possible.
  */
-
-const JOBS = [
-  { name: 'notifications', everyMs: 10_000, run: () => dispatchOnce() },
-  { name: 'hold-sweeper', everyMs: 60_000, run: () => sweepExpiredHolds() },
-  { name: 'payment-reconciler', everyMs: 120_000, run: () => reconcilePendingPayments() },
-];
-
-let running = true;
-
-async function loop(job) {
-  while (running) {
-    const startedAt = Date.now();
-    try {
-      const result = await job.run();
-      // Only log when something happened; an idle worker should be quiet.
-      if (result && Object.values(result).some((v) => typeof v === 'number' && v > 0)) {
-        logger.info({ job: job.name, ...result }, 'job completed');
-      }
-    } catch (err) {
-      logger.error({ job: job.name, err: err.message }, 'job failed');
-    }
-
-    const elapsed = Date.now() - startedAt;
-    const wait = Math.max(1000, job.everyMs - elapsed);
-    await new Promise((resolve) => { setTimeout(resolve, wait).unref(); });
-  }
-}
 
 async function start() {
   await connect();
@@ -58,22 +26,21 @@ async function start() {
     jobs: JOBS.map((j) => j.name), env: env.NODE_ENV, mailDriver: env.MAIL_DRIVER,
   }, 'carisca worker started');
 
+  const stopJobs = startBackgroundJobs();
+
   const shutdown = async (signal) => {
     logger.info({ signal }, 'worker shutting down');
-    running = false;
     // Let the current iteration finish rather than killing it mid-transaction.
-    setTimeout(async () => {
+    stopJobs().finally(async () => {
       await closeMailer().catch(() => {});
       await disconnect().catch(() => {});
       await closeRedis().catch(() => {});
       process.exit(0);
-    }, 2000).unref();
+    });
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
-
-  await Promise.all(JOBS.map(loop));
 }
 
 start().catch((err) => {
